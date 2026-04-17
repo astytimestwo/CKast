@@ -1,0 +1,14 @@
+{
+  "name": "ckast-broadcaster",
+  "version": "1.0.0",
+  "description": "Node.js FFmpeg screen capture relay for CKast",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mp4frag": "^0.5.0",
+    "ws": "^8.13.0"
+  }
+}

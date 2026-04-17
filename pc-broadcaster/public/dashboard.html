@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CKast Broadcaster</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh;
+            background-color: #2b2726; /* Earthy dark brown/slate */
+            color: #efebe9; /* Soft off-white */
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center;
+        }
+        h1 {
+            font-size: 36px; font-weight: 300; letter-spacing: 2px;
+            margin-bottom: 8px;
+            color: #d97757; /* Terracotta orange */
+        }
+        .subtitle { color: #a19d9b; margin-bottom: 40px; font-size: 16px; font-weight: 300; }
+        .btn-row { display: flex; gap: 16px; margin-bottom: 24px; }
+        button {
+            padding: 16px 40px; font-size: 20px;
+            cursor: pointer; border-radius: 8px;
+            border: none; font-weight: 500;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        button:hover { transform: scale(1.02); }
+        #startBtn {
+            background-color: #7da27e; /* Sage green */
+            color: #1a1716; 
+        }
+        #startBtn.live {
+            background-color: #d97757; /* Terracotta orange alert */
+            color: #1a1716; 
+        }
+        #stopBtn { background: #3e3837; color: #a19d9b; display: none; }
+        #stopBtn.visible { display: inline-block; }
+        #stopBtn:hover { background: #4f4846; color: #efebe9; }
+        #status { font-size: 18px; color: #a19d9b; min-height: 28px; }
+        #status.ok { color: #7da27e; }
+        #status.err { color: #d97757; }
+        .stats {
+            margin-top: 24px; padding: 16px 28px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid #3e3837;
+            border-radius: 12px; font-size: 14px;
+            color: #a19d9b; display: flex; flex-direction: column; gap: 12px;
+        }
+        .stat-line { display: flex; align-items: center; justify-content: flex-start; }
+        .indicator { 
+            display: inline-block; width: 10px; height: 10px; 
+            border-radius: 50%; background: #554e4c; margin-right: 12px; 
+            transition: background-color 0.3s;
+        }
+        .indicator.active { background: #7da27e; box-shadow: 0 0 8px rgba(125,162,126,0.4); }
+    </style>
+</head>
+<body>
+    <h1>CKast</h1>
+    <p class="subtitle">High-Fidelity FFmpeg Local Screen Mirroing</p>
+
+    <div class="btn-row">
+        <button id="startBtn">Start Cast</button>
+        <button id="stopBtn">Stop</button>
+    </div>
+
+    <p id="status">System idle</p>
+    
+    <div class="stats">
+        <div class="stat-line"><span id="tvInd" class="indicator"></span> Target TV Connected</div>
+        <div class="stat-line"><span id="encInd" class="indicator"></span> FFmpeg Hardware Encoding Active</div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const tvInd = document.getElementById('tvInd');
+        const encInd = document.getElementById('encInd');
+
+        function setStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = type || '';
+        }
+
+        async function updateStatus() {
+            try {
+                const res = await fetch('/status');
+                const data = await res.json();
+                
+                tvInd.className = 'indicator ' + (data.tvConnected ? 'active' : '');
+                encInd.className = 'indicator ' + (data.running ? 'active' : '');
+
+                if (data.running) {
+                    startBtn.classList.add('live');
+                    startBtn.textContent = '● CASTING';
+                    stopBtn.classList.add('visible');
+                    setStatus('Live — Capturing Desktop', 'ok');
+                } else {
+                    startBtn.classList.remove('live');
+                    startBtn.textContent = 'Start Cast';
+                    stopBtn.classList.remove('visible');
+                    setStatus('System idle', '');
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(updateStatus, 1500);
+        updateStatus();
+
+        startBtn.onclick = async () => {
+            if (startBtn.classList.contains('live')) return;
+            setStatus('Initializing FFmpeg...', '');
+            await fetch('/start', { method: 'POST' });
+            updateStatus();
+        };
+
+        stopBtn.onclick = async () => {
+            setStatus('Terminating...', '');
+            await fetch('/stop', { method: 'POST' });
+            updateStatus();
+        };
+    </script>
+</body>
+</html>
