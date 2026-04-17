@@ -36,6 +36,7 @@ This script acts as a smart launcher:
 
 ## Tweaking Quality & Performance
 If you encounter network limits (e.g. slow router causing buffer delays), you can easily modify the FFmpeg encode arguments inside `server.js`:
+If you think the latency is bad, it is. Cause it is optimised for highest quality. 
 
 - **Bitrate**: `'-b:v', '20000k'` controls the visual sharpness and buffering speed. Drop this back to `10000k` or `8000k` if your local Wi-Fi router gets overwhelmed during explosive scenes, which can induce stutter.
 - **Latency / Buffering**: `'-rtbufsize', '1024M'` prevents the desktop capturer from dropping frames if your CPU spikes.
