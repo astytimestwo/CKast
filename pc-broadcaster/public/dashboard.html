@@ -8,153 +8,739 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             min-height: 100vh;
-            background-color: #2b2726;
+            background: #262421;
             color: #efebe9;
-            font-family: 'Segoe UI', Arial, sans-serif;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+        main {
+            width: min(1180px, calc(100vw - 40px));
+            margin: 0 auto;
+            padding: 32px 0;
+        }
+        header {
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
+            align-items: end;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 24px;
         }
         h1 {
-            font-size: 36px;
-            font-weight: 300;
-            letter-spacing: 2px;
-            margin-bottom: 8px;
             color: #d97757;
+            font-size: 34px;
+            font-weight: 400;
+            letter-spacing: 1px;
         }
         .subtitle {
             color: #a19d9b;
-            margin-bottom: 40px;
-            font-size: 16px;
-            font-weight: 300;
+            font-size: 14px;
+            margin-top: 6px;
         }
-        .btn-row {
+        .grid {
+            display: grid;
+            grid-template-columns: minmax(300px, 0.85fr) minmax(420px, 1.15fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .panel {
+            border: 1px solid #3e3837;
+            border-radius: 8px;
+            background: #302c2a;
+            padding: 18px;
+        }
+        .panel h2 {
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 14px;
+            color: #efebe9;
+        }
+        .row {
             display: flex;
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .stack { display: grid; gap: 12px; }
+        label {
+            display: grid;
+            gap: 6px;
+            color: #bdb7b4;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input[type="text"], select {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid #4f4846;
+            border-radius: 6px;
+            background: #1c1a18;
+            color: #efebe9;
+            font-size: 14px;
+            padding: 0 12px;
+        }
+        input[type="checkbox"] {
+            accent-color: #d97757;
+        }
+        input[type="range"] {
+            width: 100%;
+            accent-color: #d97757;
         }
         button {
-            padding: 16px 40px;
-            font-size: 20px;
-            cursor: pointer;
-            border-radius: 8px;
+            min-height: 40px;
             border: none;
-            font-weight: 500;
-            transition: transform 0.2s, background-color 0.2s;
-        }
-        button:hover { transform: scale(1.02); }
-        #startBtn {
-            background-color: #7da27e;
-            color: #1a1716;
-        }
-        #startBtn.live {
-            background-color: #d97757;
-            color: #1a1716;
-        }
-        #stopBtn { background: #3e3837; color: #a19d9b; display: none; }
-        #stopBtn.visible { display: inline-block; }
-        #stopBtn:hover { background: #4f4846; color: #efebe9; }
-        #status { font-size: 18px; color: #a19d9b; min-height: 28px; }
-        #status.ok { color: #7da27e; }
-        #status.err { color: #d97757; }
-        .stats {
-            margin-top: 24px;
-            padding: 16px 28px;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid #3e3837;
-            border-radius: 12px;
+            border-radius: 6px;
+            background: #4f4846;
+            color: #efebe9;
+            cursor: pointer;
             font-size: 14px;
-            color: #a19d9b;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+            font-weight: 600;
+            padding: 0 14px;
         }
-        .stat-line { display: flex; align-items: center; justify-content: flex-start; }
+        button:hover { background: #5d5552; }
+        button.primary {
+            background: #7da27e;
+            color: #11100f;
+        }
+        button.primary:hover { background: #8db28e; }
+        button.warn {
+            background: #d97757;
+            color: #11100f;
+        }
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .status {
+            min-height: 24px;
+            color: #a19d9b;
+            font-size: 14px;
+        }
+        .status.ok { color: #7da27e; }
+        .status.err { color: #d97757; }
+        .stats {
+            display: grid;
+            gap: 10px;
+            margin-top: 14px;
+            color: #a19d9b;
+            font-size: 14px;
+        }
+        .stat-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            border-top: 1px solid #3e3837;
+            padding-top: 10px;
+        }
+        .value {
+            color: #efebe9;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
         .indicator {
             display: inline-block;
             width: 10px;
             height: 10px;
             border-radius: 50%;
             background: #554e4c;
-            margin-right: 12px;
+            margin-right: 8px;
             transition: background-color 0.3s;
         }
         .indicator.active {
             background: #7da27e;
             box-shadow: 0 0 8px rgba(125,162,126,0.4);
         }
+        .transport {
+            display: grid;
+            grid-template-columns: auto auto 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+        .time {
+            min-width: 108px;
+            color: #bdb7b4;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+        .metadata {
+            border: 1px solid #3e3837;
+            border-radius: 6px;
+            padding: 12px;
+            background: #272321;
+            color: #bdb7b4;
+            font-size: 13px;
+            min-height: 78px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+        .sync-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #bdb7b4;
+            font-size: 13px;
+        }
+        @media (max-width: 860px) {
+            main { width: min(100vw - 24px, 1180px); padding-top: 20px; }
+            header { display: block; }
+            .grid { grid-template-columns: 1fr; }
+            .transport { grid-template-columns: 1fr 1fr; }
+            .sync-grid { grid-template-columns: 1fr 1fr; }
+            .settings-grid { grid-template-columns: 1fr; }
+            .transport input[type="range"], .transport .time { grid-column: 1 / -1; }
+            .time { text-align: left; }
+        }
     </style>
 </head>
 <body>
-    <h1>CKast</h1>
-    <p class="subtitle">High-Fidelity FFmpeg Local Screen Mirroring</p>
+    <main>
+        <header>
+            <div>
+                <h1>CKast</h1>
+                <p class="subtitle">Local casting controls</p>
+            </div>
+            <p id="globalStatus" class="status">Starting...</p>
+        </header>
 
-    <div class="btn-row">
-        <button id="startBtn">Start Cast</button>
-        <button id="stopBtn">Stop</button>
-    </div>
+        <section class="grid">
+            <div class="panel">
+                <h2>Desktop Capture</h2>
+                <div class="row">
+                    <button id="startBtn" class="primary">Start Cast</button>
+                    <button id="stopBtn">Stop</button>
+                </div>
+                <p id="captureStatus" class="status">System idle</p>
+                <div class="stats">
+                    <div class="stat-line">
+                        <span><span id="tvInd" class="indicator"></span>Target TV</span>
+                        <span id="tvValue" class="value">Disconnected</span>
+                    </div>
+                    <div class="stat-line">
+                        <span><span id="encInd" class="indicator"></span>FFmpeg Capture</span>
+                        <span id="encValue" class="value">Stopped</span>
+                    </div>
+                </div>
+            </div>
 
-    <p id="status">System idle</p>
-
-    <div class="stats">
-        <div class="stat-line"><span id="tvInd" class="indicator"></span> Target TV Connected</div>
-        <div class="stat-line"><span id="encInd" class="indicator"></span> FFmpeg Capture Active</div>
-    </div>
+            <div class="panel">
+                <h2>Local Player</h2>
+                <div class="stack">
+                    <label>
+                        Media file path
+                        <input id="filePath" type="text" placeholder="C:\Media\movie.mkv">
+                    </label>
+                    <div class="row">
+                        <button id="openBtn" class="primary">Open</button>
+                        <button id="playBtn" disabled>Play</button>
+                        <button id="playerStopBtn" disabled>Stop</button>
+                    </div>
+                    <div class="transport">
+                        <button id="backBtn" disabled>-10s</button>
+                        <button id="fwdBtn" disabled>+10s</button>
+                        <input id="seekRange" type="range" min="0" max="0" step="0.1" value="0" disabled>
+                        <span id="timeLabel" class="time">00:00 / 00:00</span>
+                    </div>
+                    <label>
+                        Volume
+                        <input id="volumeRange" type="range" min="0" max="100" step="1" value="100" disabled>
+                    </label>
+                    <label>
+                        TV prebuffer delay
+                        <input id="delayRange" type="range" min="1" max="8" step="0.5" value="5">
+                    </label>
+                    <div class="settings-grid">
+                        <label>
+                            Quality
+                            <select id="qualitySelect">
+                                <option value="8000">Balanced 8 Mbps</option>
+                                <option value="12000">Sharp 12 Mbps</option>
+                                <option value="16000" selected>High 16 Mbps</option>
+                                <option value="22000">Max 22 Mbps</option>
+                            </select>
+                        </label>
+                        <label>
+                            TV fit
+                            <select id="fitSelect">
+                                <option value="contain" selected>Contain</option>
+                                <option value="cover">Cover</option>
+                                <option value="fill">Fill</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="settings-grid">
+                        <label>
+                            Embedded subtitle
+                            <select id="subtitleTrackSelect">
+                                <option value="-1">None</option>
+                            </select>
+                        </label>
+                        <label>
+                            External subtitle path
+                            <input id="externalSubtitlePath" type="text" placeholder="C:\Media\movie.srt">
+                        </label>
+                    </div>
+                    <div class="settings-grid">
+                        <label>
+                            External .srt delay seconds
+                            <input id="subtitleDelayInput" type="text" value="0">
+                        </label>
+                        <label>
+                            Subtitle size
+                            <input id="subtitleScaleInput" type="text" value="1">
+                        </label>
+                    </div>
+                    <div class="row">
+                        <label class="check-row"><input id="subtitlesEnabled" type="checkbox"> Burn subtitles into TV video</label>
+                        <button id="applyStreamOptionsBtn" disabled>Apply Stream Options</button>
+                    </div>
+                    <div class="sync-grid">
+                        <button id="startTvVideoBtn" disabled>Start TV Video</button>
+                        <button id="syncPlayBtn" class="primary" disabled>Synced Play</button>
+                        <button id="resyncBtn" disabled>Resync</button>
+                        <button id="stopTvVideoBtn" disabled>Stop TV Video</button>
+                    </div>
+                    <div class="sync-grid">
+                        <button id="videoBackBtn" disabled>Video -100ms</button>
+                        <button id="videoForwardBtn" disabled>Video +100ms</button>
+                        <button id="videoBackBigBtn" disabled>Video -500ms</button>
+                        <button id="videoForwardBigBtn" disabled>Video +500ms</button>
+                    </div>
+                    <p id="playerStatus" class="status">No media loaded</p>
+                    <p id="tvVideoStatus" class="status">TV video idle</p>
+                    <div id="metadata" class="metadata">Open a local media file to inspect streams and control PC audio playback.</div>
+                </div>
+            </div>
+        </section>
+    </main>
 
     <script>
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
-        const statusEl = document.getElementById('status');
+        const captureStatus = document.getElementById('captureStatus');
+        const globalStatus = document.getElementById('globalStatus');
         const tvInd = document.getElementById('tvInd');
         const encInd = document.getElementById('encInd');
+        const tvValue = document.getElementById('tvValue');
+        const encValue = document.getElementById('encValue');
 
-        function setStatus(msg, type) {
-            statusEl.textContent = msg;
-            statusEl.className = type || '';
+        const filePath = document.getElementById('filePath');
+        const openBtn = document.getElementById('openBtn');
+        const playBtn = document.getElementById('playBtn');
+        const playerStopBtn = document.getElementById('playerStopBtn');
+        const backBtn = document.getElementById('backBtn');
+        const fwdBtn = document.getElementById('fwdBtn');
+        const seekRange = document.getElementById('seekRange');
+        const volumeRange = document.getElementById('volumeRange');
+        const delayRange = document.getElementById('delayRange');
+        const qualitySelect = document.getElementById('qualitySelect');
+        const fitSelect = document.getElementById('fitSelect');
+        const subtitleTrackSelect = document.getElementById('subtitleTrackSelect');
+        const externalSubtitlePath = document.getElementById('externalSubtitlePath');
+        const subtitleDelayInput = document.getElementById('subtitleDelayInput');
+        const subtitleScaleInput = document.getElementById('subtitleScaleInput');
+        const subtitlesEnabled = document.getElementById('subtitlesEnabled');
+        const applyStreamOptionsBtn = document.getElementById('applyStreamOptionsBtn');
+        const startTvVideoBtn = document.getElementById('startTvVideoBtn');
+        const syncPlayBtn = document.getElementById('syncPlayBtn');
+        const resyncBtn = document.getElementById('resyncBtn');
+        const stopTvVideoBtn = document.getElementById('stopTvVideoBtn');
+        const videoBackBtn = document.getElementById('videoBackBtn');
+        const videoForwardBtn = document.getElementById('videoForwardBtn');
+        const videoBackBigBtn = document.getElementById('videoBackBigBtn');
+        const videoForwardBigBtn = document.getElementById('videoForwardBigBtn');
+        const timeLabel = document.getElementById('timeLabel');
+        const playerStatus = document.getElementById('playerStatus');
+        const tvVideoStatus = document.getElementById('tvVideoStatus');
+        const metadata = document.getElementById('metadata');
+
+        let currentMedia = null;
+        let currentPlayer = null;
+        let currentTvVideo = null;
+        let currentSync = null;
+        let isSeeking = false;
+        let streamControlsHydrated = false;
+
+        function setStatus(el, msg, type) {
+            el.textContent = msg;
+            el.className = 'status ' + (type || '');
+        }
+
+        function formatTime(seconds) {
+            seconds = Math.max(0, Number(seconds) || 0);
+            const total = Math.floor(seconds);
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const s = total % 60;
+            if (h > 0) {
+                return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+            }
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        async function postJson(url, body) {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {})
+            });
+            const data = await res.json();
+            if (!res.ok || data.success === false) {
+                throw new Error(data.error || 'Request failed');
+            }
+            return data;
+        }
+
+        function renderPlayer(player) {
+            currentPlayer = player || currentPlayer;
+            const active = !!(currentPlayer && currentPlayer.loaded);
+            const duration = active ? Number(currentPlayer.duration) || 0 : 0;
+            const timePos = active ? Number(currentPlayer.timePos) || 0 : 0;
+
+            playBtn.disabled = !active;
+            playerStopBtn.disabled = !(currentPlayer && currentPlayer.running);
+            backBtn.disabled = !active;
+            fwdBtn.disabled = !active;
+            seekRange.disabled = !active;
+            volumeRange.disabled = !(currentPlayer && currentPlayer.running);
+            startTvVideoBtn.disabled = !active;
+            syncPlayBtn.disabled = !active;
+            applyStreamOptionsBtn.disabled = !active;
+            resyncBtn.disabled = !active || !(currentTvVideo && currentTvVideo.active);
+            stopTvVideoBtn.disabled = !(currentTvVideo && currentTvVideo.active);
+            videoBackBtn.disabled = !active;
+            videoForwardBtn.disabled = !active;
+            videoBackBigBtn.disabled = !active;
+            videoForwardBigBtn.disabled = !active;
+
+            playBtn.textContent = currentPlayer && currentPlayer.paused === false ? 'Pause' : 'Play';
+            seekRange.max = String(Math.max(duration, 0));
+            if (!isSeeking) seekRange.value = String(Math.min(timePos, duration || timePos));
+            volumeRange.value = String(Math.round(Number(currentPlayer && currentPlayer.volume) || 100));
+            timeLabel.textContent = formatTime(timePos) + ' / ' + formatTime(duration);
+
+            if (active) {
+                setStatus(playerStatus, currentPlayer.paused ? 'Paused on PC audio' : 'Playing PC audio', 'ok');
+            } else if (currentPlayer && currentPlayer.error) {
+                setStatus(playerStatus, currentPlayer.error, 'err');
+            } else {
+                setStatus(playerStatus, 'No media loaded', '');
+            }
+        }
+
+        function renderTvVideo(tvVideo, tvTelemetry, sync) {
+            currentTvVideo = tvVideo || currentTvVideo;
+            currentSync = sync || currentSync;
+            const active = !!(currentTvVideo && currentTvVideo.active);
+            resyncBtn.disabled = !(currentPlayer && currentPlayer.loaded) || !active;
+            stopTvVideoBtn.disabled = !active;
+
+            if (!currentTvVideo || currentTvVideo.mode === 'idle') {
+                setStatus(tvVideoStatus, 'TV video idle', '');
+                return;
+            }
+
+            const parts = ['TV video: ' + currentTvVideo.mode];
+            if (sync && sync.pendingResume) parts.push('prebuffering');
+            if (currentSync && Number.isFinite(currentSync.manualVideoOffsetSeconds)) {
+                parts.push('offset ' + currentSync.manualVideoOffsetSeconds.toFixed(2) + 's');
+            }
+            if (tvTelemetry && Number.isFinite(tvTelemetry.drift)) {
+                parts.push('drift ' + tvTelemetry.drift.toFixed(2) + 's');
+            }
+            if (currentTvVideo.error) {
+                setStatus(tvVideoStatus, currentTvVideo.error, 'err');
+            } else {
+                setStatus(tvVideoStatus, parts.join(' | '), active ? 'ok' : '');
+            }
+        }
+
+        function renderMetadata(media, dependencies) {
+            if (!media) {
+                const mpv = dependencies && dependencies.mpv ? dependencies.mpv.command : 'mpv';
+                metadata.textContent = [
+                    'MPV: ' + mpv,
+                    'FFmpeg: ' + ((dependencies && dependencies.ffmpeg) || 'ffmpeg'),
+                    'ffprobe: ' + ((dependencies && dependencies.ffprobe) || 'ffprobe')
+                ].join('\n');
+                return;
+            }
+
+            const video = media.video.length ? media.video[0] : null;
+            const lines = [
+                media.fileName,
+                'Duration: ' + formatTime(media.duration),
+                'Video: ' + (video ? video.codec + ' ' + video.width + 'x' + video.height : 'none'),
+                'Audio tracks: ' + media.audio.length,
+                'Subtitle tracks: ' + media.subtitles.length
+            ];
+            metadata.textContent = lines.join('\n');
+            renderSubtitleChoices(media);
+        }
+
+        function renderSubtitleChoices(media) {
+            subtitleTrackSelect.innerHTML = '<option value="-1">None</option>';
+            if (!media || !media.subtitles) return;
+
+            for (const subtitle of media.subtitles) {
+                const opt = document.createElement('option');
+                opt.value = String(subtitle.index);
+                opt.textContent = '#' + subtitle.index + ' ' + (subtitle.language || 'und') + ' ' + (subtitle.title || subtitle.codec || '');
+                subtitleTrackSelect.appendChild(opt);
+            }
+        }
+
+        function collectStreamOptions() {
+            return {
+                bitrateKbps: Number(qualitySelect.value),
+                fitMode: fitSelect.value,
+                subtitlesEnabled: subtitlesEnabled.checked,
+                subtitleStreamIndex: Number(subtitleTrackSelect.value),
+                externalSubtitlePath: externalSubtitlePath.value.trim(),
+                subtitleDelay: Number(subtitleDelayInput.value) || 0,
+                subtitleScale: Number(subtitleScaleInput.value) || 1
+            };
+        }
+
+        function applyStreamOptionsToControls(options) {
+            if (!options) return;
+            if (options.bitrateKbps) qualitySelect.value = String(options.bitrateKbps);
+            if (options.fitMode) fitSelect.value = options.fitMode;
+            subtitlesEnabled.checked = !!options.subtitlesEnabled;
+            if (options.subtitleStreamIndex !== undefined) subtitleTrackSelect.value = String(options.subtitleStreamIndex);
+            externalSubtitlePath.value = options.externalSubtitlePath || '';
+            subtitleDelayInput.value = String(options.subtitleDelay || 0);
+            subtitleScaleInput.value = String(options.subtitleScale || 1);
         }
 
         async function updateStatus() {
             try {
-                const res = await fetch('/status');
-                const data = await res.json();
+                const [captureRes, playerRes] = await Promise.all([
+                    fetch('/status').then((res) => res.json()),
+                    fetch('/api/player/status').then((res) => res.json())
+                ]);
 
-                tvInd.className = 'indicator ' + (data.tvConnected ? 'active' : '');
-                encInd.className = 'indicator ' + (data.running ? 'active' : '');
+                tvInd.className = 'indicator ' + (captureRes.tvConnected ? 'active' : '');
+                encInd.className = 'indicator ' + (captureRes.running ? 'active' : '');
+                tvValue.textContent = captureRes.tvConnected ? 'Connected' : 'Disconnected';
+                encValue.textContent = captureRes.running ? 'Running' : 'Stopped';
 
-                if (data.running) {
-                    startBtn.classList.add('live');
+                if (captureRes.running) {
+                    startBtn.classList.add('warn');
                     startBtn.textContent = 'CASTING';
-                    stopBtn.classList.add('visible');
-                    setStatus('Live - Capturing Desktop', 'ok');
+                    setStatus(captureStatus, 'Live - Capturing Desktop', 'ok');
                 } else {
-                    startBtn.classList.remove('live');
+                    startBtn.classList.remove('warn');
                     startBtn.textContent = 'Start Cast';
-                    stopBtn.classList.remove('visible');
-                    setStatus('System idle', '');
+                    setStatus(captureStatus, 'System idle', '');
                 }
+
+                if (playerRes.success) {
+                    if (!streamControlsHydrated) {
+                        applyStreamOptionsToControls(playerRes.streamOptions);
+                        streamControlsHydrated = true;
+                    }
+                    renderPlayer(playerRes.player);
+                    renderTvVideo(playerRes.tvVideo, playerRes.tvTelemetry, playerRes.sync);
+                    if (!currentMedia) renderMetadata(null, playerRes.dependencies);
+                }
+
+                setStatus(globalStatus, 'Ready', 'ok');
             } catch (e) {
                 console.error(e);
-                setStatus('Server unreachable', 'err');
+                setStatus(globalStatus, 'Server unreachable', 'err');
             }
         }
 
-        setInterval(updateStatus, 1500);
-        updateStatus();
-
         startBtn.onclick = async () => {
-            if (startBtn.classList.contains('live')) return;
-            setStatus('Initializing FFmpeg...', '');
-            await fetch('/start', { method: 'POST' });
+            setStatus(captureStatus, 'Initializing FFmpeg...', '');
+            await postJson('/start');
             updateStatus();
         };
 
         stopBtn.onclick = async () => {
-            setStatus('Terminating...', '');
-            await fetch('/stop', { method: 'POST' });
+            setStatus(captureStatus, 'Terminating...', '');
+            await postJson('/stop');
             updateStatus();
         };
+
+        openBtn.onclick = async () => {
+            const selectedPath = filePath.value.trim();
+            if (!selectedPath) {
+                setStatus(playerStatus, 'Enter a media file path', 'err');
+                return;
+            }
+
+            try {
+                openBtn.disabled = true;
+                setStatus(playerStatus, 'Opening media...', '');
+                const data = await postJson('/api/player/open', { filePath: selectedPath });
+                currentMedia = data.media;
+                renderMetadata(data.media);
+                renderPlayer(data.player);
+            } catch (e) {
+                setStatus(playerStatus, e.message, 'err');
+            } finally {
+                openBtn.disabled = false;
+            }
+        };
+
+        playBtn.onclick = async () => {
+            try {
+                const route = currentPlayer && currentPlayer.paused === false ? '/api/player/pause' : '/api/player/play';
+                const data = await postJson(route);
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo);
+            } catch (e) {
+                setStatus(playerStatus, e.message, 'err');
+            }
+        };
+
+        playerStopBtn.onclick = async () => {
+            try {
+                const data = await postJson('/api/player/stop');
+                currentMedia = null;
+                renderMetadata(null);
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo);
+            } catch (e) {
+                setStatus(playerStatus, e.message, 'err');
+            }
+        };
+
+        async function seekBy(delta) {
+            const current = Number(currentPlayer && currentPlayer.timePos) || 0;
+            await seekTo(current + delta);
+        }
+
+        async function seekTo(time) {
+            try {
+                const duration = Number(currentPlayer && currentPlayer.duration) || 0;
+                const target = Math.max(0, duration ? Math.min(time, duration) : time);
+                const data = await postJson('/api/player/seek', { time: target });
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(playerStatus, e.message, 'err');
+            }
+        }
+
+        backBtn.onclick = () => seekBy(-10);
+        fwdBtn.onclick = () => seekBy(10);
+        seekRange.oninput = () => {
+            isSeeking = true;
+            const duration = Number(currentPlayer && currentPlayer.duration) || 0;
+            timeLabel.textContent = formatTime(seekRange.value) + ' / ' + formatTime(duration);
+        };
+        seekRange.onchange = async () => {
+            await seekTo(Number(seekRange.value));
+            isSeeking = false;
+        };
+        volumeRange.onchange = async () => {
+            try {
+                const data = await postJson('/api/player/volume', { volume: Number(volumeRange.value) });
+                renderPlayer(data.player);
+            } catch (e) {
+                setStatus(playerStatus, e.message, 'err');
+            }
+        };
+
+        startTvVideoBtn.onclick = async () => {
+            try {
+                setStatus(tvVideoStatus, 'Starting TV video stream...', '');
+                const data = await postJson('/api/player/tv/start', {
+                    autoPlay: false,
+                    delaySeconds: Number(delayRange.value),
+                    ...collectStreamOptions()
+                });
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        syncPlayBtn.onclick = async () => {
+            try {
+                setStatus(tvVideoStatus, 'Prebuffering TV, then starting PC audio...', '');
+                const data = await postJson('/api/player/tv/start', {
+                    autoPlay: true,
+                    delaySeconds: Number(delayRange.value),
+                    ...collectStreamOptions()
+                });
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        resyncBtn.onclick = async () => {
+            try {
+                setStatus(tvVideoStatus, 'Resyncing TV video...', '');
+                const data = await postJson('/api/player/tv/resync');
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        stopTvVideoBtn.onclick = async () => {
+            try {
+                const data = await postJson('/api/player/tv/stop');
+                renderTvVideo(data.tvVideo);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        applyStreamOptionsBtn.onclick = async () => {
+            try {
+                setStatus(tvVideoStatus, 'Applying stream options...', '');
+                const data = await postJson('/api/player/tv/options', collectStreamOptions());
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        fitSelect.onchange = async () => {
+            try {
+                const data = await postJson('/api/player/tv/fit', { fitMode: fitSelect.value });
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
+
+        async function nudgeVideo(deltaSeconds) {
+            try {
+                setStatus(tvVideoStatus, 'Adjusting video sync...', '');
+                const data = await postJson('/api/player/tv/nudge', { deltaSeconds });
+                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+            } catch (e) {
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        }
+
+        videoBackBtn.onclick = () => nudgeVideo(-0.1);
+        videoForwardBtn.onclick = () => nudgeVideo(0.1);
+        videoBackBigBtn.onclick = () => nudgeVideo(-0.5);
+        videoForwardBigBtn.onclick = () => nudgeVideo(0.5);
+
+        setInterval(updateStatus, 1000);
+        updateStatus();
     </script>
 </body>
 </html>

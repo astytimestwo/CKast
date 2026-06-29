@@ -11,9 +11,12 @@ pnpm-debug.log*
 # Runtime and build output
 dist/
 build/
+.runtime/
+pc-broadcaster/.runtime/
 *.wgt
 *.tpk
 *.zip
+.superpowers/
 
 # OS/editor noise
 .DS_Store
@@ -24,3 +27,9 @@ Thumbs.db
 # Environment files
 .env
 .env.*
+
+# Local external source dumps / binaries managed outside this repo
+mpv-main/
+mpv-master/
+mpv-v*/
+plan.txt

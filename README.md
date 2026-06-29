@@ -7,6 +7,7 @@ CKast is an ultra-low latency, local Wi-Fi screen mirroring solution designed sp
 This project splits into two components:
 1. **The TV App (Tizen Web App)**: A lightweight HTML5 video player that leverages Media Source Extensions (MSE) to decode and render raw fragmented MP4 chunks directly using the TV's built-in H.264 hardware decoder.
 2. **The PC Broadcaster**: A Node.js relay server that spawns native `FFmpeg` to capture the Windows desktop in real-time (`gdigrab`), process an H.264 encode without buffering (`-tune zerolatency`), and pipes the binary stream to the TV.
+3. **The Synced Local Player**: A PC-side MPV/FFmpeg mode where MPV plays audio locally on the PC while CKast streams video-only to the TV with telemetry-based sync correction.
 
 ## Why CKast?
 - **Silky Smooth**: Most browser-based screen captures (`MediaRecorder`) produce VP8/WebM which forces older TVs into software-decoding (resulting in stutter). CKast forces H.264, triggering the TV's native hardware decoder.
@@ -16,6 +17,7 @@ This project splits into two components:
 ## Project Structure
 - `config.xml`, `index.html`, `js/` - **The Tizen App** files. Deploy these via Tizen Studio to your Samsung TV.
 - `pc-broadcaster/` - **The Node Server**. Run this on the Windows machine you wish to broadcast from.
+- `mpv-v*/` - Optional local MPV release folder. This is ignored by Git and used by the synced local-player mode.
 
 ## Setup Instructions
 

@@ -1,5 +1,5 @@
 // CKast Tizen TV Screen Receiver
-// Requires an H.264 fragmented MP4 stream.
+// Receives H.264 fragmented MP4 chunks plus lightweight JSON control messages.
 
 (function () {
     'use strict';
@@ -14,10 +14,13 @@
     var ws = null;
     var mediaSource = null;
     var sourceBuffer = null;
+    var objectUrl = null;
     var queue = [];
     var hasPlayed = false;
+    var shouldAutoPlay = true;
     var reconnectTimer = null;
     var evictTimer = null;
+    var telemetryTimer = null;
 
     function setConnectStatus(msg) {
         var el = document.getElementById('connectStatusText');
@@ -29,9 +32,26 @@
     function startConnection(ip) {
         cleanup();
         setConnectStatus('Connecting to ' + ip + '...');
+        createMediaPipeline(true);
+        connectWebSocket(ip);
+    }
+
+    function createMediaPipeline(autoPlay) {
+        shouldAutoPlay = autoPlay;
+        hasPlayed = false;
+        queue = [];
+        sourceBuffer = null;
+
+        if (objectUrl) {
+            try { URL.revokeObjectURL(objectUrl); } catch (e) { }
+            objectUrl = null;
+        }
 
         mediaSource = new MediaSource();
-        video.src = URL.createObjectURL(mediaSource);
+        objectUrl = URL.createObjectURL(mediaSource);
+        video.removeAttribute('src');
+        video.src = objectUrl;
+        video.load();
 
         mediaSource.addEventListener('sourceopen', function () {
             try {
@@ -47,8 +67,16 @@
                 console.error('[SourceBuffer] error event');
             });
 
-            connectWebSocket(ip);
+            processQueue();
         });
+    }
+
+    function resetForSyncedVideo() {
+        try { video.pause(); } catch (e) { }
+        video.playbackRate = 1;
+        overlay.classList.remove('hidden');
+        setConnectStatus('Buffering synced video...');
+        createMediaPipeline(false);
     }
 
     function connectWebSocket(ip) {
@@ -66,14 +94,21 @@
         ws.onopen = function () {
             setConnectStatus('Connected - waiting for stream...');
             if (evictTimer) clearInterval(evictTimer);
+            if (telemetryTimer) clearInterval(telemetryTimer);
             evictTimer = setInterval(evictBuffer, 20000);
+            telemetryTimer = setInterval(sendTelemetry, 500);
         };
 
         ws.onmessage = function (event) {
+            if (typeof event.data === 'string') {
+                handleControlMessage(event.data);
+                return;
+            }
+
             queue.push(event.data);
             processQueue();
 
-            if (!overlay.classList.contains('hidden')) {
+            if (shouldAutoPlay && !overlay.classList.contains('hidden')) {
                 overlay.classList.add('hidden');
             }
         };
@@ -87,6 +122,35 @@
         ws.onerror = function () {
             setConnectStatus('Connection failed - retrying...');
         };
+    }
+
+    function handleControlMessage(raw) {
+        var msg;
+        try {
+            msg = JSON.parse(raw);
+        } catch (e) {
+            console.error('[Control] invalid JSON:', raw);
+            return;
+        }
+
+        if (msg.type === 'reset') {
+            resetForSyncedVideo();
+        } else if (msg.type === 'play') {
+            shouldAutoPlay = true;
+            overlay.classList.add('hidden');
+            playVideo();
+        } else if (msg.type === 'pause') {
+            video.pause();
+        } else if (msg.type === 'setPlaybackRate') {
+            var rate = Number(msg.rate);
+            if (rate >= 0.5 && rate <= 2) {
+                video.playbackRate = rate;
+            }
+        } else if (msg.type === 'fit') {
+            if (msg.mode === 'contain' || msg.mode === 'cover' || msg.mode === 'fill') {
+                video.style.objectFit = msg.mode === 'fill' ? 'fill' : msg.mode;
+            }
+        }
     }
 
     function processQueue() {
@@ -107,13 +171,38 @@
             }
         }
 
-        if (!hasPlayed) {
+        if (!hasPlayed && shouldAutoPlay) {
             hasPlayed = true;
-            video.play().catch(function () {
-                video.muted = true;
-                video.play().catch(function () { });
-            });
+            playVideo();
         }
+    }
+
+    function playVideo() {
+        video.play().catch(function () {
+            video.muted = true;
+            video.play().catch(function () { });
+        });
+    }
+
+    function sendTelemetry() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        var bufferedEnd = 0;
+        try {
+            if (video.buffered.length > 0) {
+                bufferedEnd = video.buffered.end(video.buffered.length - 1);
+            }
+        } catch (e) { }
+
+        ws.send(JSON.stringify({
+            type: 'telemetry',
+            currentTime: video.currentTime || 0,
+            bufferedEnd: bufferedEnd,
+            paused: video.paused,
+            playbackRate: video.playbackRate || 1,
+            queueLength: queue.length,
+            readyState: video.readyState
+        }));
     }
 
     function evictBuffer() {
@@ -143,6 +232,7 @@
     function cleanup() {
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (evictTimer) { clearInterval(evictTimer); evictTimer = null; }
+        if (telemetryTimer) { clearInterval(telemetryTimer); telemetryTimer = null; }
         if (ws) { try { ws.close(); } catch (e) { } ws = null; }
         queue = [];
         sourceBuffer = null;
