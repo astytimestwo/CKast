@@ -8,7 +8,8 @@ This is the backend server that performs the heavy lifting for the CKast system.
    - Easiest installation via Windows terminal: `winget install Gyan.FFmpeg`
    - Verify by typing `ffmpeg -version` in your terminal.
 3. **MPV** for synced local-file playback with PC audio.
-   - CKast auto-detects `../mpv-v0.41.0-x86_64-pc-windows-msvc/mpv.exe`.
+   - MPV is not bundled with CKast. Download a Windows MPV build separately.
+   - CKast auto-detects `../mpv-v0.41.0-x86_64-pc-windows-msvc/mpv.exe` when that local folder exists.
    - You can also set `MPV_PATH=C:\path\to\mpv.exe`.
    - Or place MPV at `pc-broadcaster/vendor/mpv/mpv.exe`.
 
@@ -47,19 +48,7 @@ This mode keeps audio on the PC and sends video-only to the TV.
 4. Choose quality, TV fit, optional subtitle settings, and prebuffer delay.
 5. Click **Synced Play**.
 
-The PC plays audio through MPV. The TV receives video-only FFmpeg fMP4 chunks and reports telemetry back to the server. If the stream drifts, use **Resync** or the `Video +/-100ms` controls.
-
-## Live Telemetry
-When debugging, run the server from a terminal so telemetry is visible immediately:
-
-```bash
-npm start
-```
-
-Live telemetry is also available as a stream at `http://localhost:8080/api/debug/events`.
-Open `http://localhost:8080/api/debug/snapshot` for the current server, player, TV, stream, and dependency state.
-
-Telemetry is live-only: CKast prints events to the terminal and streams new events to connected debug clients. It does not write telemetry logs to disk or replay old events.
+The PC plays audio through MPV. The TV receives video-only FFmpeg fMP4 chunks and sends a lightweight sync-state ping once per second so the PC can keep audio aligned.
 
 Subtitle notes:
 - Embedded subtitle selection and size are supported through FFmpeg burn-in.

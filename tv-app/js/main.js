@@ -20,9 +20,8 @@
     var shouldAutoPlay = true;
     var reconnectTimer = null;
     var evictTimer = null;
-    var telemetryTimer = null;
+    var syncStateTimer = null;
     var fixedLatencyTimer = null;
-    var clientEventLastSentAt = {};
     var fixedLatency = {
         enabled: true,
         targetSeconds: 2.5,
@@ -69,60 +68,6 @@
         if (el) el.textContent = msg;
     }
 
-    function sendClientEvent(event, data) {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-        try {
-            ws.send(JSON.stringify({
-                type: 'client_event',
-                event: event,
-                data: data || {},
-                at: Date.now()
-            }));
-        } catch (e) { }
-    }
-
-    function sendClientEventThrottled(event, data, intervalMs) {
-        var now = Date.now();
-        var last = clientEventLastSentAt[event] || 0;
-        if (now - last < intervalMs) return;
-        clientEventLastSentAt[event] = now;
-        sendClientEvent(event, data);
-    }
-
-    function getVideoErrorDetails() {
-        if (!video || !video.error) return {};
-        return {
-            code: video.error.code,
-            message: video.error.message || ''
-        };
-    }
-
-    video.addEventListener('playing', function () {
-        sendClientEventThrottled('video_playing', {
-            currentTime: video.currentTime || 0,
-            readyState: video.readyState
-        }, 1000);
-    });
-
-    video.addEventListener('waiting', function () {
-        sendClientEventThrottled('video_waiting', {
-            currentTime: video.currentTime || 0,
-            readyState: video.readyState
-        }, 1000);
-    });
-
-    video.addEventListener('stalled', function () {
-        sendClientEventThrottled('video_stalled', {
-            currentTime: video.currentTime || 0,
-            readyState: video.readyState
-        }, 1000);
-    });
-
-    video.addEventListener('error', function () {
-        sendClientEvent('video_error', getVideoErrorDetails());
-    });
-
     startConnection(SERVER_IP);
 
     function startConnection(ip) {
@@ -138,14 +83,6 @@
         resetFixedLatencySession('pipeline_reset');
         queue = [];
         sourceBuffer = null;
-        sendClientEvent('media_pipeline_create', {
-            autoPlay: shouldAutoPlay,
-            fixedLatency: {
-                enabled: fixedLatency.enabled,
-                targetSeconds: fixedLatency.targetSeconds,
-                minBufferSeconds: fixedLatency.minBufferSeconds
-            }
-        });
 
         if (objectUrl) {
             try { URL.revokeObjectURL(objectUrl); } catch (e) { }
@@ -159,19 +96,11 @@
         video.load();
 
         mediaSource.addEventListener('sourceopen', function () {
-            sendClientEvent('mse_source_open');
             try {
                 sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
                 sourceBuffer.mode = 'sequence';
-                sendClientEvent('source_buffer_created', {
-                    mode: sourceBuffer.mode
-                });
             } catch (e) {
                 setConnectStatus('ERROR: ' + e.message);
-                sendClientEvent('source_buffer_create_failed', {
-                    name: e.name,
-                    message: e.message
-                });
                 return;
             }
 
@@ -181,7 +110,6 @@
             });
             sourceBuffer.addEventListener('error', function () {
                 console.error('[SourceBuffer] error event');
-                sendClientEvent('source_buffer_error');
             });
 
             processQueue();
@@ -202,9 +130,6 @@
         try {
             ws = new WebSocket(url);
         } catch (e) {
-            sendClientEvent('websocket_create_failed', {
-                message: e.message
-            });
             scheduleReconnect(ip);
             return;
         }
@@ -213,12 +138,11 @@
 
         ws.onopen = function () {
             setConnectStatus('Connected - waiting for stream...');
-            sendClientEvent('websocket_open', { url: url });
             if (evictTimer) clearInterval(evictTimer);
-            if (telemetryTimer) clearInterval(telemetryTimer);
+            if (syncStateTimer) clearInterval(syncStateTimer);
             if (fixedLatencyTimer) clearInterval(fixedLatencyTimer);
             evictTimer = setInterval(evictBuffer, 20000);
-            telemetryTimer = setInterval(sendTelemetry, 500);
+            syncStateTimer = setInterval(sendSyncState, 1000);
             fixedLatencyTimer = setInterval(runFixedLatencyController, 250);
         };
 
@@ -245,7 +169,6 @@
 
         ws.onerror = function () {
             setConnectStatus('Connection failed - retrying...');
-            sendClientEvent('websocket_error');
         };
     }
 
@@ -255,13 +178,8 @@
             msg = JSON.parse(raw);
         } catch (e) {
             console.error('[Control] invalid JSON:', raw);
-            sendClientEvent('control_invalid_json', {
-                message: e.message
-            });
             return;
         }
-
-        sendClientEvent('control_received', { type: msg.type });
 
         if (msg.type === 'reset') {
             resetForSyncedVideo(msg.autoPlay);
@@ -301,19 +219,10 @@
             sourceBuffer.appendBuffer(chunk);
         } catch (e) {
             if (e.name === 'QuotaExceededError') {
-                sendClientEvent('mse_quota_exceeded', {
-                    queueLength: queue.length,
-                    currentTime: video.currentTime || 0
-                });
                 evictBuffer();
                 queue.unshift(chunk);
             } else {
                 console.error('[MSE] error:', e.name, e.message);
-                sendClientEvent('mse_append_failed', {
-                    name: e.name,
-                    message: e.message,
-                    queueLength: queue.length
-                });
             }
         }
 
@@ -342,11 +251,6 @@
             video.playbackRate = 1;
         }
 
-        sendClientEvent('fixed_latency_options_applied', {
-            enabled: fixedLatency.enabled,
-            targetSeconds: fixedLatency.targetSeconds,
-            minBufferSeconds: fixedLatency.minBufferSeconds
-        });
     }
 
     function getBufferedEnd() {
@@ -371,14 +275,6 @@
 
         fixedLatency.lastAction = action;
         fixedLatency.lastActionAt = now;
-        sendClientEvent('fixed_latency_action', {
-            action: action,
-            targetSeconds: fixedLatency.targetSeconds,
-            bufferAheadSeconds: roundSeconds(getBufferAhead()),
-            currentTime: roundSeconds(Number(video.currentTime) || 0),
-            bufferedEnd: roundSeconds(getBufferedEnd()),
-            data: data || {}
-        });
     }
 
     function setVideoRate(rate) {
@@ -398,11 +294,6 @@
             setFixedLatencyAction(reason, data || {}, 0);
             return true;
         } catch (e) {
-            sendClientEvent('fixed_latency_seek_failed', {
-                name: e.name,
-                message: e.message,
-                reason: reason
-            });
             return false;
         }
     }
@@ -491,39 +382,20 @@
     }
 
     function playVideo() {
-        video.play().then(function () {
-            sendClientEvent('video_play_started', {
-                muted: video.muted,
-                currentTime: video.currentTime || 0
-            });
-        }).catch(function (err) {
-            sendClientEvent('video_play_failed', {
-                name: err && err.name,
-                message: err && err.message,
-                muted: video.muted
-            });
+        video.play().catch(function () {
             video.muted = true;
-            video.play().then(function () {
-                sendClientEvent('video_muted_play_started', {
-                    currentTime: video.currentTime || 0
-                });
-            }).catch(function (mutedErr) {
-                sendClientEvent('video_muted_play_failed', {
-                    name: mutedErr && mutedErr.name,
-                    message: mutedErr && mutedErr.message
-                });
-            });
+            video.play().catch(function () { });
         });
     }
 
-    function sendTelemetry() {
+    function sendSyncState() {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
         var bufferedEnd = getBufferedEnd();
         var bufferAhead = Math.max(0, bufferedEnd - (Number(video.currentTime) || 0));
 
         ws.send(JSON.stringify({
-            type: 'telemetry',
+            type: 'sync_state',
             currentTime: video.currentTime || 0,
             bufferedEnd: bufferedEnd,
             paused: video.paused,
@@ -554,11 +426,6 @@
                 var buffStart = sourceBuffer.buffered.start(0);
                 if (buffStart < removeEnd) {
                     sourceBuffer.remove(buffStart, removeEnd);
-                    sendClientEvent('buffer_evicted', {
-                        start: buffStart,
-                        end: removeEnd,
-                        currentTime: video.currentTime || 0
-                    });
                 }
             }
         } catch (e) { }
@@ -574,7 +441,7 @@
     function cleanup() {
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (evictTimer) { clearInterval(evictTimer); evictTimer = null; }
-        if (telemetryTimer) { clearInterval(telemetryTimer); telemetryTimer = null; }
+        if (syncStateTimer) { clearInterval(syncStateTimer); syncStateTimer = null; }
         if (fixedLatencyTimer) { clearInterval(fixedLatencyTimer); fixedLatencyTimer = null; }
         if (ws) { try { ws.close(); } catch (e) { } ws = null; }
         queue = [];

@@ -88,8 +88,9 @@ function summarizeProbe(raw, filePath) {
             })),
         subtitles: streams
             .filter((stream) => stream.codec_type === 'subtitle')
-            .map((stream) => ({
+            .map((stream, subtitleIndex) => ({
                 index: stream.index,
+                subtitleIndex,
                 codec: stream.codec_name || '',
                 language: stream.tags && stream.tags.language ? stream.tags.language : '',
                 title: stream.tags && stream.tags.title ? stream.tags.title : ''
@@ -99,5 +100,6 @@ function summarizeProbe(raw, filePath) {
 
 module.exports = {
     probeMedia,
-    resolveFfprobePath
+    resolveFfprobePath,
+    summarizeProbe
 };

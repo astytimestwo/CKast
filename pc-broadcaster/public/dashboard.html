@@ -24,6 +24,13 @@
             gap: 24px;
             margin-bottom: 24px;
         }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
         h1 {
             color: #d97757;
             font-size: 34px;
@@ -194,6 +201,7 @@
         @media (max-width: 860px) {
             main { width: min(100vw - 24px, 1180px); padding-top: 20px; }
             header { display: block; }
+            .header-actions { justify-content: flex-start; margin-top: 12px; }
             .grid { grid-template-columns: 1fr; }
             .transport { grid-template-columns: 1fr 1fr; }
             .sync-grid { grid-template-columns: 1fr 1fr; }
@@ -210,11 +218,14 @@
                 <h1>CKast</h1>
                 <p class="subtitle">Local casting controls</p>
             </div>
-            <p id="globalStatus" class="status">Starting...</p>
+            <div class="header-actions">
+                <label class="check-row"><input id="showDevOptions" type="checkbox"> Show full dev options</label>
+                <p id="globalStatus" class="status">Starting...</p>
+            </div>
         </header>
 
         <section class="grid">
-            <div class="panel">
+            <div class="panel dev-option" hidden>
                 <h2>Desktop Capture</h2>
                 <div class="row">
                     <button id="startBtn" class="primary">Start Cast</button>
@@ -286,7 +297,7 @@
                         Volume
                         <input id="volumeRange" type="range" min="0" max="100" step="1" value="100" disabled>
                     </label>
-                    <div class="settings-grid">
+                    <div class="settings-grid dev-option" hidden>
                         <label>
                             Audio sync trim seconds
                             <input id="mirrorTrimInput" type="text" value="0">
@@ -296,13 +307,13 @@
                             <button id="syncMirrorAudioBtn" disabled>Sync Audio</button>
                         </label>
                     </div>
-                    <div class="sync-grid">
+                    <div class="sync-grid dev-option" hidden>
                         <button id="audioBackBtn" disabled>Audio -100ms</button>
                         <button id="audioForwardBtn" disabled>Audio +100ms</button>
                         <button id="audioBackBigBtn" disabled>Audio -500ms</button>
                         <button id="audioForwardBigBtn" disabled>Audio +500ms</button>
                     </div>
-                    <label>
+                    <label class="dev-option" hidden>
                         TV prebuffer delay
                         <input id="delayRange" type="range" min="1" max="8" step="0.5" value="5">
                     </label>
@@ -352,19 +363,19 @@
                         <button id="applyStreamOptionsBtn" disabled>Apply Stream Options</button>
                     </div>
                     <div class="sync-grid">
-                        <button id="startTvVideoBtn" disabled>Start TV Video</button>
+                        <button id="startTvVideoBtn" class="dev-option" hidden disabled>Start TV Video</button>
                         <button id="syncPlayBtn" class="primary" disabled>Synced Play</button>
-                        <button id="resyncBtn" disabled>Resync</button>
+                        <button id="resyncBtn" class="dev-option" hidden disabled>Resync</button>
                         <button id="stopTvVideoBtn" disabled>Stop TV Video</button>
                     </div>
-                    <div class="sync-grid">
+                    <div class="sync-grid dev-option" hidden>
                         <button id="videoBackBtn" disabled>Video -100ms</button>
                         <button id="videoForwardBtn" disabled>Video +100ms</button>
                         <button id="videoBackBigBtn" disabled>Video -500ms</button>
                         <button id="videoForwardBigBtn" disabled>Video +500ms</button>
                     </div>
                     <p id="playerStatus" class="status">No media loaded</p>
-                    <p id="mirrorSyncStatus" class="status">Mirror sync idle</p>
+                    <p id="mirrorSyncStatus" class="status dev-option" hidden>Mirror sync idle</p>
                     <p id="tvVideoStatus" class="status">TV video idle</p>
                     <div id="metadata" class="metadata">Open a local media file to inspect streams and control PC audio playback.</div>
                 </div>
@@ -375,6 +386,7 @@
     <script>
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const showDevOptions = document.getElementById('showDevOptions');
         const captureStatus = document.getElementById('captureStatus');
         const globalStatus = document.getElementById('globalStatus');
         const tvInd = document.getElementById('tvInd');
@@ -437,9 +449,21 @@
         let isSeeking = false;
         let streamControlsHydrated = false;
 
+        function applyDevOptionVisibility() {
+            const show = !!(showDevOptions && showDevOptions.checked);
+            document.querySelectorAll('.dev-option').forEach((el) => {
+                el.hidden = !show;
+            });
+            if (showDevOptions) {
+                try { localStorage.setItem('ckast-show-dev-options', show ? '1' : '0'); } catch (e) { }
+            }
+        }
+
         function setStatus(el, msg, type) {
+            const wasDevOption = el.classList.contains('dev-option');
             el.textContent = msg;
             el.className = 'status ' + (type || '');
+            if (wasDevOption) el.classList.add('dev-option');
         }
 
         function formatTime(seconds) {
@@ -527,7 +551,7 @@
             } else if (!currentMirrorSync || !currentMirrorSync.captureRunning) {
                 setStatus(mirrorSyncStatus, 'Start Cast to measure TV mirror lag', '');
             } else if (!canEstimate) {
-                setStatus(mirrorSyncStatus, 'Waiting for TV lag telemetry...', '');
+                setStatus(mirrorSyncStatus, 'Waiting for TV sync timing...', '');
             } else {
                 setStatus(
                     mirrorSyncStatus,
@@ -537,7 +561,7 @@
             }
         }
 
-        function renderFixedLatency(fixedLatency, tvTelemetry) {
+        function renderFixedLatency(fixedLatency, tvSyncState) {
             currentFixedLatency = fixedLatency || currentFixedLatency;
             if (!currentFixedLatency) return;
 
@@ -547,7 +571,7 @@
             const control = currentFixedLatency.control || {};
             const bufferTarget = Number(control.targetSeconds);
             const bufferTargetText = Number.isFinite(bufferTarget) ? bufferTarget.toFixed(2) + 's' : '--';
-            const tvFixed = tvTelemetry && tvTelemetry.fixedLatency ? tvTelemetry.fixedLatency : null;
+            const tvFixed = tvSyncState && tvSyncState.fixedLatency ? tvSyncState.fixedLatency : null;
             const bufferAhead = Number(tvFixed && tvFixed.bufferAheadSeconds);
             const action = tvFixed && tvFixed.lastAction ? tvFixed.lastAction : 'waiting';
 
@@ -577,7 +601,7 @@
             }
         }
 
-        function renderTvVideo(tvVideo, tvTelemetry, sync) {
+        function renderTvVideo(tvVideo, tvSyncState, sync) {
             currentTvVideo = tvVideo || currentTvVideo;
             currentSync = sync || currentSync;
             const active = !!(currentTvVideo && currentTvVideo.active);
@@ -594,8 +618,8 @@
             if (currentSync && Number.isFinite(currentSync.manualVideoOffsetSeconds)) {
                 parts.push('offset ' + currentSync.manualVideoOffsetSeconds.toFixed(2) + 's');
             }
-            if (tvTelemetry && Number.isFinite(tvTelemetry.drift)) {
-                parts.push('drift ' + tvTelemetry.drift.toFixed(2) + 's');
+            if (tvSyncState && Number.isFinite(tvSyncState.drift)) {
+                parts.push('drift ' + tvSyncState.drift.toFixed(2) + 's');
             }
             if (currentTvVideo.error) {
                 setStatus(tvVideoStatus, currentTvVideo.error, 'err');
@@ -633,7 +657,7 @@
 
             for (const subtitle of media.subtitles) {
                 const opt = document.createElement('option');
-                opt.value = String(subtitle.index);
+                opt.value = String(subtitle.subtitleIndex !== undefined ? subtitle.subtitleIndex : subtitle.index);
                 opt.textContent = '#' + subtitle.index + ' ' + (subtitle.language || 'und') + ' ' + (subtitle.title || subtitle.codec || '');
                 subtitleTrackSelect.appendChild(opt);
             }
@@ -691,8 +715,8 @@
                     }
                     renderPlayer(playerRes.player);
                     renderMirrorSync(playerRes.mirrorSync, playerRes.player);
-                    renderFixedLatency(playerRes.fixedLatency || captureRes.fixedLatency, playerRes.tvTelemetry || captureRes.tvTelemetry);
-                    renderTvVideo(playerRes.tvVideo, playerRes.tvTelemetry, playerRes.sync);
+                    renderFixedLatency(playerRes.fixedLatency || captureRes.fixedLatency, playerRes.tvSyncState || captureRes.tvSyncState);
+                    renderTvVideo(playerRes.tvVideo, playerRes.tvSyncState, playerRes.sync);
                     if (!currentMedia) renderMetadata(null, playerRes.dependencies);
                 }
 
@@ -723,7 +747,7 @@
                     enabled: fixedLatencyEnabled.checked,
                     targetSeconds: Number(fixedLatencyInput.value) || 2.5
                 });
-                renderFixedLatency(data.fixedLatency, data.tvTelemetry);
+                renderFixedLatency(data.fixedLatency, data.tvSyncState);
             } catch (e) {
                 setStatus(fixedLatencyStatus, e.message, 'err');
             } finally {
@@ -787,9 +811,13 @@
             try {
                 const duration = Number(currentPlayer && currentPlayer.duration) || 0;
                 const target = Math.max(0, duration ? Math.min(time, duration) : time);
-                const data = await postJson('/api/player/seek', { time: target });
+                const tvActive = !!(currentTvVideo && currentTvVideo.active);
+                const data = await postJson('/api/player/seek', {
+                    time: target,
+                    autoPlay: tvActive
+                });
                 renderPlayer(data.player);
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(playerStatus, e.message, 'err');
             }
@@ -853,7 +881,7 @@
                     ...collectStreamOptions()
                 });
                 renderPlayer(data.player);
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -868,7 +896,7 @@
                     ...collectStreamOptions()
                 });
                 renderPlayer(data.player);
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -879,7 +907,7 @@
                 setStatus(tvVideoStatus, 'Resyncing TV video...', '');
                 const data = await postJson('/api/player/tv/resync');
                 renderPlayer(data.player);
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -898,7 +926,7 @@
             try {
                 setStatus(tvVideoStatus, 'Applying stream options...', '');
                 const data = await postJson('/api/player/tv/options', collectStreamOptions());
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -907,7 +935,7 @@
         fitSelect.onchange = async () => {
             try {
                 const data = await postJson('/api/player/tv/fit', { fitMode: fitSelect.value });
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -917,7 +945,7 @@
             try {
                 setStatus(tvVideoStatus, 'Adjusting video sync...', '');
                 const data = await postJson('/api/player/tv/nudge', { deltaSeconds });
-                renderTvVideo(data.tvVideo, data.tvTelemetry, data.sync);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 setStatus(tvVideoStatus, e.message, 'err');
             }
@@ -927,6 +955,12 @@
         videoForwardBtn.onclick = () => nudgeVideo(0.1);
         videoBackBigBtn.onclick = () => nudgeVideo(-0.5);
         videoForwardBigBtn.onclick = () => nudgeVideo(0.5);
+
+        if (showDevOptions) {
+            try { showDevOptions.checked = localStorage.getItem('ckast-show-dev-options') === '1'; } catch (e) { }
+            showDevOptions.onchange = applyDevOptionVisibility;
+            applyDevOptionVisibility();
+        }
 
         setInterval(updateStatus, 1000);
         updateStatus();
