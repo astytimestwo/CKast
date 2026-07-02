@@ -69,6 +69,8 @@ class MpvController extends EventEmitter {
             timePos: 0,
             duration: 0,
             volume: 100,
+            audioDelay: 0,
+            speed: 1,
             mpvPath: resolveMpvPath(),
             error: null
         };
@@ -93,6 +95,7 @@ class MpvController extends EventEmitter {
         }
 
         await this.command(['set_property', 'pause', true]);
+        await this.command(['set_property', 'speed', 1]);
         await this.command(['loadfile', normalizedPath, 'replace']);
 
         this.state.filePath = normalizedPath;
@@ -131,6 +134,18 @@ class MpvController extends EventEmitter {
         return this.getStatus();
     }
 
+    async setSpeed(speed) {
+        this.assertReady();
+        const nextSpeed = clamp(Number(speed), 0.9, 1.1);
+        if (!Number.isFinite(nextSpeed)) {
+            throw new Error('Speed must be a number');
+        }
+
+        await this.command(['set_property', 'speed', nextSpeed]);
+        this.state.speed = nextSpeed;
+        return this.getStatus();
+    }
+
     async setVolume(volume) {
         this.assertProcess();
         const nextVolume = clamp(Number(volume), 0, 100);
@@ -139,14 +154,28 @@ class MpvController extends EventEmitter {
         return this.getStatus();
     }
 
+    async setAudioDelay(delaySeconds) {
+        this.assertReady();
+        const nextDelay = clamp(Number(delaySeconds), -2, 10);
+        if (!Number.isFinite(nextDelay)) {
+            throw new Error('Audio delay must be a number');
+        }
+
+        await this.command(['set_property', 'audio-delay', nextDelay]);
+        this.state.audioDelay = nextDelay;
+        return this.getStatus();
+    }
+
     async refreshCoreProperties() {
         if (!this.socket) return this.getStatus();
 
-        const [timePos, duration, paused, volume] = await Promise.allSettled([
+        const [timePos, duration, paused, volume, audioDelay, speed] = await Promise.allSettled([
             this.command(['get_property', 'time-pos']),
             this.command(['get_property', 'duration']),
             this.command(['get_property', 'pause']),
-            this.command(['get_property', 'volume'])
+            this.command(['get_property', 'volume']),
+            this.command(['get_property', 'audio-delay']),
+            this.command(['get_property', 'speed'])
         ]);
 
         if (timePos.status === 'fulfilled' && Number.isFinite(timePos.value)) {
@@ -160,6 +189,12 @@ class MpvController extends EventEmitter {
         }
         if (volume.status === 'fulfilled' && Number.isFinite(volume.value)) {
             this.state.volume = volume.value;
+        }
+        if (audioDelay.status === 'fulfilled' && Number.isFinite(audioDelay.value)) {
+            this.state.audioDelay = audioDelay.value;
+        }
+        if (speed.status === 'fulfilled' && Number.isFinite(speed.value)) {
+            this.state.speed = speed.value;
         }
 
         return this.getStatus();
@@ -188,6 +223,8 @@ class MpvController extends EventEmitter {
         this.state.paused = true;
         this.state.timePos = 0;
         this.state.duration = 0;
+        this.state.audioDelay = 0;
+        this.state.speed = 1;
         this.state.filePath = null;
 
         return this.getStatus();
@@ -204,8 +241,7 @@ class MpvController extends EventEmitter {
         this.pipePath = '\\\\.\\pipe\\ckast-mpv-' + process.pid + '-' + Date.now();
         const args = [
             '--idle=yes',
-            '--force-window=no',
-            '--video=no',
+            '--force-window=yes',
             '--pause=yes',
             '--input-terminal=no',
             '--terminal=no',
@@ -339,6 +375,10 @@ class MpvController extends EventEmitter {
             this.state.paused = message.data;
         } else if (message.name === 'volume' && Number.isFinite(message.data)) {
             this.state.volume = message.data;
+        } else if (message.name === 'audio-delay' && Number.isFinite(message.data)) {
+            this.state.audioDelay = message.data;
+        } else if (message.name === 'speed' && Number.isFinite(message.data)) {
+            this.state.speed = message.data;
         }
     }
 
@@ -347,6 +387,8 @@ class MpvController extends EventEmitter {
         await this.command(['observe_property', 2, 'duration']);
         await this.command(['observe_property', 3, 'pause']);
         await this.command(['observe_property', 4, 'volume']);
+        await this.command(['observe_property', 5, 'audio-delay']);
+        await this.command(['observe_property', 6, 'speed']);
     }
 
     command(command) {

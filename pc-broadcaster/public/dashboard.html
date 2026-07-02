@@ -230,7 +230,38 @@
                         <span><span id="encInd" class="indicator"></span>FFmpeg Capture</span>
                         <span id="encValue" class="value">Stopped</span>
                     </div>
+                    <div class="stat-line">
+                        <span>TV mirror lag</span>
+                        <span id="mirrorLagValue" class="value">--</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>Target total lag</span>
+                        <span id="fixedLatencyValue" class="value">2.50s</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>TV buffer target</span>
+                        <span id="fixedLatencyBufferTargetValue" class="value">--</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>TV buffer ahead</span>
+                        <span id="fixedLatencyBufferValue" class="value">--</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>MPV audio delay</span>
+                        <span id="audioDelayValue" class="value">0.00s</span>
+                    </div>
                 </div>
+                <div class="settings-grid">
+                    <label>
+                        Target total TV lag seconds
+                        <input id="fixedLatencyInput" type="text" value="2.5">
+                    </label>
+                    <label class="check-row"><input id="fixedLatencyEnabled" type="checkbox" checked> Fixed latency mode</label>
+                </div>
+                <div class="row">
+                    <button id="applyFixedLatencyBtn">Apply TV Delay</button>
+                </div>
+                <p id="fixedLatencyStatus" class="status">Set PC audio/player delay to match the TV target.</p>
             </div>
 
             <div class="panel">
@@ -255,6 +286,22 @@
                         Volume
                         <input id="volumeRange" type="range" min="0" max="100" step="1" value="100" disabled>
                     </label>
+                    <div class="settings-grid">
+                        <label>
+                            Audio sync trim seconds
+                            <input id="mirrorTrimInput" type="text" value="0">
+                        </label>
+                        <label>
+                            Mirrored TV sync
+                            <button id="syncMirrorAudioBtn" disabled>Sync Audio</button>
+                        </label>
+                    </div>
+                    <div class="sync-grid">
+                        <button id="audioBackBtn" disabled>Audio -100ms</button>
+                        <button id="audioForwardBtn" disabled>Audio +100ms</button>
+                        <button id="audioBackBigBtn" disabled>Audio -500ms</button>
+                        <button id="audioForwardBigBtn" disabled>Audio +500ms</button>
+                    </div>
                     <label>
                         TV prebuffer delay
                         <input id="delayRange" type="range" min="1" max="8" step="0.5" value="5">
@@ -317,6 +364,7 @@
                         <button id="videoForwardBigBtn" disabled>Video +500ms</button>
                     </div>
                     <p id="playerStatus" class="status">No media loaded</p>
+                    <p id="mirrorSyncStatus" class="status">Mirror sync idle</p>
                     <p id="tvVideoStatus" class="status">TV video idle</p>
                     <div id="metadata" class="metadata">Open a local media file to inspect streams and control PC audio playback.</div>
                 </div>
@@ -333,6 +381,15 @@
         const encInd = document.getElementById('encInd');
         const tvValue = document.getElementById('tvValue');
         const encValue = document.getElementById('encValue');
+        const mirrorLagValue = document.getElementById('mirrorLagValue');
+        const fixedLatencyValue = document.getElementById('fixedLatencyValue');
+        const fixedLatencyBufferTargetValue = document.getElementById('fixedLatencyBufferTargetValue');
+        const fixedLatencyBufferValue = document.getElementById('fixedLatencyBufferValue');
+        const fixedLatencyInput = document.getElementById('fixedLatencyInput');
+        const fixedLatencyEnabled = document.getElementById('fixedLatencyEnabled');
+        const applyFixedLatencyBtn = document.getElementById('applyFixedLatencyBtn');
+        const fixedLatencyStatus = document.getElementById('fixedLatencyStatus');
+        const audioDelayValue = document.getElementById('audioDelayValue');
 
         const filePath = document.getElementById('filePath');
         const openBtn = document.getElementById('openBtn');
@@ -342,6 +399,12 @@
         const fwdBtn = document.getElementById('fwdBtn');
         const seekRange = document.getElementById('seekRange');
         const volumeRange = document.getElementById('volumeRange');
+        const mirrorTrimInput = document.getElementById('mirrorTrimInput');
+        const syncMirrorAudioBtn = document.getElementById('syncMirrorAudioBtn');
+        const audioBackBtn = document.getElementById('audioBackBtn');
+        const audioForwardBtn = document.getElementById('audioForwardBtn');
+        const audioBackBigBtn = document.getElementById('audioBackBigBtn');
+        const audioForwardBigBtn = document.getElementById('audioForwardBigBtn');
         const delayRange = document.getElementById('delayRange');
         const qualitySelect = document.getElementById('qualitySelect');
         const fitSelect = document.getElementById('fitSelect');
@@ -361,6 +424,7 @@
         const videoForwardBigBtn = document.getElementById('videoForwardBigBtn');
         const timeLabel = document.getElementById('timeLabel');
         const playerStatus = document.getElementById('playerStatus');
+        const mirrorSyncStatus = document.getElementById('mirrorSyncStatus');
         const tvVideoStatus = document.getElementById('tvVideoStatus');
         const metadata = document.getElementById('metadata');
 
@@ -368,6 +432,8 @@
         let currentPlayer = null;
         let currentTvVideo = null;
         let currentSync = null;
+        let currentMirrorSync = null;
+        let currentFixedLatency = null;
         let isSeeking = false;
         let streamControlsHydrated = false;
 
@@ -427,6 +493,7 @@
             seekRange.max = String(Math.max(duration, 0));
             if (!isSeeking) seekRange.value = String(Math.min(timePos, duration || timePos));
             volumeRange.value = String(Math.round(Number(currentPlayer && currentPlayer.volume) || 100));
+            audioDelayValue.textContent = ((Number(currentPlayer && currentPlayer.audioDelay) || 0).toFixed(2)) + 's';
             timeLabel.textContent = formatTime(timePos) + ' / ' + formatTime(duration);
 
             if (active) {
@@ -435,6 +502,78 @@
                 setStatus(playerStatus, currentPlayer.error, 'err');
             } else {
                 setStatus(playerStatus, 'No media loaded', '');
+            }
+        }
+
+        function renderMirrorSync(mirrorSync, player) {
+            currentMirrorSync = mirrorSync || currentMirrorSync;
+            const activePlayer = !!((player || currentPlayer) && (player || currentPlayer).loaded);
+            const canEstimate = !!(currentMirrorSync && currentMirrorSync.canEstimate);
+            const currentDelay = Number(currentMirrorSync && currentMirrorSync.currentAudioDelaySeconds);
+            const recommendedDelay = Number(currentMirrorSync && currentMirrorSync.recommendedAudioDelaySeconds);
+            const lag = Number(currentMirrorSync && currentMirrorSync.lagSeconds);
+
+            syncMirrorAudioBtn.disabled = !activePlayer || !canEstimate;
+            audioBackBtn.disabled = !activePlayer;
+            audioForwardBtn.disabled = !activePlayer;
+            audioBackBigBtn.disabled = !activePlayer;
+            audioForwardBigBtn.disabled = !activePlayer;
+
+            mirrorLagValue.textContent = Number.isFinite(lag) ? lag.toFixed(2) + 's' : '--';
+            audioDelayValue.textContent = Number.isFinite(currentDelay) ? currentDelay.toFixed(2) + 's' : '0.00s';
+
+            if (!activePlayer) {
+                setStatus(mirrorSyncStatus, 'Open media for MPV audio sync', '');
+            } else if (!currentMirrorSync || !currentMirrorSync.captureRunning) {
+                setStatus(mirrorSyncStatus, 'Start Cast to measure TV mirror lag', '');
+            } else if (!canEstimate) {
+                setStatus(mirrorSyncStatus, 'Waiting for TV lag telemetry...', '');
+            } else {
+                setStatus(
+                    mirrorSyncStatus,
+                    'TV lag ' + lag.toFixed(2) + 's | recommended audio delay ' + recommendedDelay.toFixed(2) + 's',
+                    'ok'
+                );
+            }
+        }
+
+        function renderFixedLatency(fixedLatency, tvTelemetry) {
+            currentFixedLatency = fixedLatency || currentFixedLatency;
+            if (!currentFixedLatency) return;
+
+            const enabled = currentFixedLatency.enabled !== false;
+            const target = Number(currentFixedLatency.targetTotalSeconds || currentFixedLatency.targetSeconds);
+            const targetText = Number.isFinite(target) ? target.toFixed(2) + 's' : '--';
+            const control = currentFixedLatency.control || {};
+            const bufferTarget = Number(control.targetSeconds);
+            const bufferTargetText = Number.isFinite(bufferTarget) ? bufferTarget.toFixed(2) + 's' : '--';
+            const tvFixed = tvTelemetry && tvTelemetry.fixedLatency ? tvTelemetry.fixedLatency : null;
+            const bufferAhead = Number(tvFixed && tvFixed.bufferAheadSeconds);
+            const action = tvFixed && tvFixed.lastAction ? tvFixed.lastAction : 'waiting';
+
+            fixedLatencyEnabled.checked = enabled;
+            if (document.activeElement !== fixedLatencyInput && Number.isFinite(target)) {
+                fixedLatencyInput.value = target.toFixed(2);
+            }
+
+            fixedLatencyValue.textContent = enabled ? targetText : 'Off';
+            fixedLatencyBufferTargetValue.textContent = enabled ? bufferTargetText : '--';
+            fixedLatencyBufferValue.textContent = Number.isFinite(bufferAhead) ? bufferAhead.toFixed(2) + 's' : '--';
+
+            if (!enabled) {
+                setStatus(fixedLatencyStatus, 'Fixed TV delay off', '');
+            } else if (tvFixed && tvFixed.started) {
+                setStatus(
+                    fixedLatencyStatus,
+                    'Target total ' + targetText + ' | TV buffer target ' + bufferTargetText + ' | buffer ' + fixedLatencyBufferValue.textContent + ' | ' + action,
+                    'ok'
+                );
+            } else {
+                setStatus(
+                    fixedLatencyStatus,
+                    'Set PC audio/player delay to +' + targetText + ', then Start Cast',
+                    ''
+                );
             }
         }
 
@@ -551,6 +690,8 @@
                         streamControlsHydrated = true;
                     }
                     renderPlayer(playerRes.player);
+                    renderMirrorSync(playerRes.mirrorSync, playerRes.player);
+                    renderFixedLatency(playerRes.fixedLatency || captureRes.fixedLatency, playerRes.tvTelemetry || captureRes.tvTelemetry);
                     renderTvVideo(playerRes.tvVideo, playerRes.tvTelemetry, playerRes.sync);
                     if (!currentMedia) renderMetadata(null, playerRes.dependencies);
                 }
@@ -574,6 +715,22 @@
             updateStatus();
         };
 
+        applyFixedLatencyBtn.onclick = async () => {
+            try {
+                applyFixedLatencyBtn.disabled = true;
+                setStatus(fixedLatencyStatus, 'Applying TV delay target...', '');
+                const data = await postJson('/api/fixed-latency', {
+                    enabled: fixedLatencyEnabled.checked,
+                    targetSeconds: Number(fixedLatencyInput.value) || 2.5
+                });
+                renderFixedLatency(data.fixedLatency, data.tvTelemetry);
+            } catch (e) {
+                setStatus(fixedLatencyStatus, e.message, 'err');
+            } finally {
+                applyFixedLatencyBtn.disabled = false;
+            }
+        };
+
         openBtn.onclick = async () => {
             const selectedPath = filePath.value.trim();
             if (!selectedPath) {
@@ -588,6 +745,7 @@
                 currentMedia = data.media;
                 renderMetadata(data.media);
                 renderPlayer(data.player);
+                updateStatus();
             } catch (e) {
                 setStatus(playerStatus, e.message, 'err');
             } finally {
@@ -601,6 +759,7 @@
                 const data = await postJson(route);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo);
+                updateStatus();
             } catch (e) {
                 setStatus(playerStatus, e.message, 'err');
             }
@@ -613,6 +772,7 @@
                 renderMetadata(null);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo);
+                updateStatus();
             } catch (e) {
                 setStatus(playerStatus, e.message, 'err');
             }
@@ -654,6 +814,35 @@
                 setStatus(playerStatus, e.message, 'err');
             }
         };
+
+        syncMirrorAudioBtn.onclick = async () => {
+            try {
+                setStatus(mirrorSyncStatus, 'Syncing MPV audio to TV lag...', '');
+                const data = await postJson('/api/player/mirror/sync-audio', {
+                    trimSeconds: Number(mirrorTrimInput.value) || 0
+                });
+                renderPlayer(data.player);
+                renderMirrorSync(data.mirrorSync, data.player);
+            } catch (e) {
+                setStatus(mirrorSyncStatus, e.message, 'err');
+            }
+        };
+
+        async function nudgeAudioDelay(deltaSeconds) {
+            try {
+                setStatus(mirrorSyncStatus, 'Adjusting MPV audio delay...', '');
+                const data = await postJson('/api/player/audio-delay/nudge', { deltaSeconds });
+                renderPlayer(data.player);
+                renderMirrorSync(data.mirrorSync, data.player);
+            } catch (e) {
+                setStatus(mirrorSyncStatus, e.message, 'err');
+            }
+        }
+
+        audioBackBtn.onclick = () => nudgeAudioDelay(-0.1);
+        audioForwardBtn.onclick = () => nudgeAudioDelay(0.1);
+        audioBackBigBtn.onclick = () => nudgeAudioDelay(-0.5);
+        audioForwardBigBtn.onclick = () => nudgeAudioDelay(0.5);
 
         startTvVideoBtn.onclick = async () => {
             try {

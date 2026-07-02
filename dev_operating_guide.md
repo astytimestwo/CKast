@@ -51,20 +51,30 @@ graph TD
 Follow these steps to deploy and build the setup.
 
 ### Step 1: Configure the TV Receiver Target
-Locate the TV application entry point at `js/main.js` and set the target broadcast IP to match your developer PC:
+Locate the TV application entry point at `tv-app/js/main.js` and set the target broadcast IP to match your developer PC:
 
 ```javascript
-// js/main.js
-var SERVER_IP = '192.168.1.XXX'; // Replace with your PC's IPv4 address
+// tv-app/js/main.js
+var SERVER_IP = '192.168.1.6'; // Replace with your PC's IPv4 address
 var SERVER_PORT = 8080;
 ```
 
 ### Step 2: Build and Package the Tizen Widget
-Using the Tizen CLI, compile and sign the widget:
+Recommended VS Code workflow:
+
+1. Open only the TV app folder in VS Code:
+    ```text
+    C:\Users\augus\OneDrive\Desktop\GO\CKast-main\tv-app
+    ```
+2. Run **Tizen TV: Build Signed Package**.
+3. Run **Tizen TV: Launch Application** and choose **Run On TV**.
+
+CLI workflow, if needed:
 
 1.  **Clean and Pack**:
-    Create the widget package from the root directory:
+    Create the widget package from the `tv-app/` directory:
     ```bash
+    cd tv-app
     tizen package -t wgt -o . -- .
     ```
 2.  **Sign the Widget**:
@@ -172,5 +182,5 @@ To prevent the stream from hanging when the PC sleeps, locked UAC windows pop up
 | **TV display freezes / infinite buffering indicator** | Network packet loss or TV buffer congestion. | Reset the connection by clicking **Stop** then **Start Cast** on the PC dashboard. |
 | **Stuttering / dropped frames (CPU bottlenecks)** | Hardware scaling or complex presets. | Ensure `-preset ultrafast` is active. If your CPU still stutters, downscale the capture resolution: change `-vf 'hwdownload,format=bgra'` to `-vf 'scale=-1:720,hwdownload,format=bgra'`. |
 | **Blurry particles / macroblocking** | Insufficient VBV bitrate. | Increase the bitrate `-b:v` to `25000k` or `30000k` in `server.js` (requires high-throughput 5GHz Wi-Fi / Ethernet). |
-| **"QuotaExceededError" in TV logs** | The TV's native video buffer is full. | Verify that the buffer eviction timer is running in `js/main.js` (`evictBuffer()`). |
+| **"QuotaExceededError" in TV logs** | The TV's native video buffer is full. | Verify that the buffer eviction timer is running in `tv-app/js/main.js` (`evictBuffer()`). |
 | **WebSocket handshake failures** | Network routing or firewall blocks. | Ensure Port 8080 is open on your Windows Firewall for both incoming TCP/UDP connections. |

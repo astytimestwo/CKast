@@ -1,16 +1,12 @@
 # CKast: PC Broadcaster
 
-This is the backend server that performs the heavy lifting for the CKast system. It leverages Node.js, `ws` (WebSockets), native `FFmpeg`, and optional `MPV` for synced local-file playback.
+This is the backend server that performs the heavy lifting for the CKast system. It leverages Node.js, `ws` (WebSockets), and native `FFmpeg` to capture your Windows desktop and stream it seamlessly to your Tizen TV.
 
 ## Prerequisites
 1. **Node.js** (v16.0 or higher recommended).
 2. **FFmpeg**: Must be installed and registered in your Windows Environment Variables or PATH.
    - Easiest installation via Windows terminal: `winget install Gyan.FFmpeg`
    - Verify by typing `ffmpeg -version` in your terminal.
-3. **MPV** for synced local-file playback with PC audio.
-   - CKast auto-detects `../mpv-v0.41.0-x86_64-pc-windows-msvc/mpv.exe`.
-   - You can also set `MPV_PATH=C:\path\to\mpv.exe`.
-   - Or place MPV at `pc-broadcaster/vendor/mpv/mpv.exe`.
 
 ## Installation
 Navigate into this `pc-broadcaster` directory and install the necessary Node packages:
@@ -37,34 +33,6 @@ This script acts as a smart launcher:
 2. Open your PC web browser and navigate to the dashboard at:
    `http://localhost:8080`
 3. Click **Start Cast** to begin the heavy-lifting FFmpeg capture process. Your TV will instantly transition from its standby screen to the live feed.
-
-## Synced Local Player Mode
-This mode keeps audio on the PC and sends video-only to the TV.
-
-1. Start the server and open `http://localhost:8080`.
-2. Enter a local media file path and click **Open**.
-3. Open the CKast TV app and wait for it to connect.
-4. Choose quality, TV fit, optional subtitle settings, and prebuffer delay.
-5. Click **Synced Play**.
-
-The PC plays audio through MPV. The TV receives video-only FFmpeg fMP4 chunks and reports telemetry back to the server. If the stream drifts, use **Resync** or the `Video +/-100ms` controls.
-
-## Live Telemetry
-When debugging, run the server from a terminal so telemetry is visible immediately:
-
-```bash
-npm start
-```
-
-Live telemetry is also available as a stream at `http://localhost:8080/api/debug/events`.
-Open `http://localhost:8080/api/debug/snapshot` for the current server, player, TV, stream, and dependency state.
-
-Telemetry is live-only: CKast prints events to the terminal and streams new events to connected debug clients. It does not write telemetry logs to disk or replay old events.
-
-Subtitle notes:
-- Embedded subtitle selection and size are supported through FFmpeg burn-in.
-- External `.srt` files support delay by creating a temporary shifted subtitle file in `pc-broadcaster/.runtime/`.
-- Changing subtitle or quality settings restarts the TV video stream at the current playback position.
 
 ## Tweaking Quality & Performance
 If you encounter network limits (e.g. slow router causing buffer delays), you can easily modify the FFmpeg encode arguments inside `server.js`:

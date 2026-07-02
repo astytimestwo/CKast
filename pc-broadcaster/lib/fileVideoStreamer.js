@@ -128,6 +128,7 @@ class FileVideoStreamer extends EventEmitter {
             active: !!this.ffmpegProcess,
             mode: this.mode,
             filePath: this.filePath,
+            ffmpegPid: this.ffmpegProcess ? this.ffmpegProcess.pid : null,
             streamStartTime: this.streamStartTime,
             hasInitSegment: !!this.initSegment,
             lastSegmentAt: this.lastSegmentAt,
@@ -160,6 +161,14 @@ class FileVideoStreamer extends EventEmitter {
         this.error = null;
         this.lastSegmentAt = null;
         this.sendSegment = options && options.sendSegment;
+        this.emit('start', {
+            filePath: normalizedPath,
+            startTime,
+            bitrateKbps,
+            subtitlesEnabled: !!this.options.subtitlesEnabled,
+            subtitleStreamIndex: this.options.subtitleStreamIndex,
+            hasExternalSubtitle: !!this.options.externalSubtitlePath
+        });
 
         this.mp4frag = new Mp4Frag();
         this.mp4frag.on('initialized', (data) => {
@@ -171,6 +180,10 @@ class FileVideoStreamer extends EventEmitter {
 
         this.mp4frag.on('segment', (data) => {
             this.lastSegmentAt = Date.now();
+            this.emit('segment', {
+                bytes: data.segment ? data.segment.length : 0,
+                at: this.lastSegmentAt
+            });
             this.safeSend(data.segment);
         });
 
@@ -215,6 +228,11 @@ class FileVideoStreamer extends EventEmitter {
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe']
         });
+        this.emit('ffmpeg_spawn', {
+            pid: this.ffmpegProcess.pid,
+            command: resolveFfmpegPath(),
+            args: ffmpegArgs
+        });
 
         this.ffmpegProcess.stdout.pipe(this.mp4frag);
 
@@ -236,6 +254,11 @@ class FileVideoStreamer extends EventEmitter {
             } else if (this.mode !== 'idle') {
                 this.mode = 'ended';
             }
+            this.emit('close', {
+                code,
+                mode: this.mode,
+                error: this.error
+            });
             this.ffmpegProcess = null;
         });
 
@@ -255,6 +278,14 @@ class FileVideoStreamer extends EventEmitter {
     }
 
     stop() {
+        if (this.ffmpegProcess || this.filePath || this.mode !== 'idle') {
+            this.emit('stop', {
+                filePath: this.filePath,
+                mode: this.mode,
+                pid: this.ffmpegProcess ? this.ffmpegProcess.pid : null
+            });
+        }
+
         if (this.ffmpegProcess) {
             this.ffmpegProcess.kill('SIGKILL');
             this.ffmpegProcess = null;

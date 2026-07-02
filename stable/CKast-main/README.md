@@ -7,7 +7,6 @@ CKast is an ultra-low latency, local Wi-Fi screen mirroring solution designed sp
 This project splits into two components:
 1. **The TV App (Tizen Web App)**: A lightweight HTML5 video player that leverages Media Source Extensions (MSE) to decode and render raw fragmented MP4 chunks directly using the TV's built-in H.264 hardware decoder.
 2. **The PC Broadcaster**: A Node.js relay server that spawns native `FFmpeg` to capture the Windows desktop in real-time (`gdigrab`), process an H.264 encode without buffering (`-tune zerolatency`), and pipes the binary stream to the TV.
-3. **The Synced Local Player**: A PC-side MPV/FFmpeg mode where MPV plays audio locally on the PC while CKast streams video-only to the TV with telemetry-based sync correction.
 
 ## Why CKast?
 - **Silky Smooth**: Most browser-based screen captures (`MediaRecorder`) produce VP8/WebM which forces older TVs into software-decoding (resulting in stutter). CKast forces H.264, triggering the TV's native hardware decoder.
@@ -15,16 +14,15 @@ This project splits into two components:
 - **Fresh State Persistence**: Automatic cache wiping and `mp4frag` header detection guarantees the TV decoder never freezes on reconnects or out-of-order chunks.
 
 ## Project Structure
-- `tv-app/` - **The Tizen App** files. Open this folder in VS Code with the Samsung Tizen TV extension and build/deploy from there.
+- `config.xml`, `index.html`, `js/` - **The Tizen App** files. Deploy these via Tizen Studio to your Samsung TV.
 - `pc-broadcaster/` - **The Node Server**. Run this on the Windows machine you wish to broadcast from.
-- `mpv-v*/` - Optional local MPV release folder. This is ignored by Git and used by the synced local-player mode.
 
 ## Setup Instructions
 
 ### 1. The TV Target
-1. Open `tv-app/` in VS Code with the Samsung Tizen TV extension.
-2. In `tv-app/js/main.js`, update `var SERVER_IP = 'YOUR_PC_IP_HERE';` to your PC's local WiFi IP (e.g., `192.168.1.5`).
-3. Use **Tizen TV: Build Signed Package**, then **Tizen TV: Launch Application** to install/run it on your TV.
+1. Open this root directory in Tizen Studio.
+2. In `js/main.js`, update `var SERVER_IP = 'YOUR_PC_IP_HERE';` to your PC's local WiFi IP (e.g., `192.168.1.5`).
+3. Build the `.wgt` and push it to your TV using `sdb`.
 
 ### 2. The PC Broadcaster
 Please refer to the `README.md` inside the `pc-broadcaster/` directory for full Windows setup instructions.
