@@ -1,37 +1,183 @@
 # CKast
 
-CKast is an ultra-low latency, local Wi-Fi screen mirroring solution designed specifically for Samsung Tizen TVs (Tizen 4.0 & above). It bypasses the traditional WebRTC limitation of older Smart TVs by utilizing direct native hardware-decoding (H.264 fMP4) streamed over websockets.
+CKast is a local Wi-Fi casting setup for Samsung Tizen TVs. The TV app receives video-only H.264 fragmented MP4 over WebSocket and plays it through the TV hardware decoder. The PC app can either capture the desktop or run the synced local-player mode where MPV plays audio on the PC while CKast streams only the video to the TV.
 
-## Architecture
+## Project Layout
 
-This project splits into two components:
-1. **The TV App (Tizen Web App)**: A lightweight HTML5 video player that leverages Media Source Extensions (MSE) to decode and render raw fragmented MP4 chunks directly using the TV's built-in H.264 hardware decoder.
-2. **The PC Broadcaster**: A Node.js relay server that spawns native `FFmpeg` to capture the Windows desktop in real-time (`gdigrab`), process an H.264 encode without buffering (`-tune zerolatency`), and pipes the binary stream to the TV.
-3. **The Synced Local Player**: A PC-side MPV/FFmpeg mode where MPV plays audio locally on the PC while CKast streams video-only to the TV with lightweight sync correction.
+- `tv-app/` - Samsung Tizen TV web app. Open this folder in VS Code when building the TV package.
+- `pc-broadcaster/` - Node.js server, dashboard, FFmpeg stream relay, and MPV controller.
+- `stable/` - local reference builds only. Ignored by Git.
+- `mpv-v*/`, `mpv-master/` - local MPV/source folders only. Ignored by Git.
 
-## Why CKast?
-- **Silky Smooth**: Most browser-based screen captures (`MediaRecorder`) produce VP8/WebM which forces older TVs into software-decoding (resulting in stutter). CKast forces H.264, triggering the TV's native hardware decoder.
-- **Micro-Latency**: Direct WebSocket piping without intermediate transcoding clusters.
-- **Fresh State Persistence**: Automatic cache wiping and `mp4frag` header detection guarantees the TV decoder never freezes on reconnects or out-of-order chunks.
+## Requirements
 
-## Project Structure
-- `tv-app/` - **The Tizen App** files. Open this folder in VS Code with the Samsung Tizen TV extension and build/deploy from there.
-- `pc-broadcaster/` - **The Node Server**. Run this on the Windows machine you wish to broadcast from.
+- Windows PC and Samsung Tizen TV on the same local network.
+- VS Code.
+- Samsung **Tizen TV** VS Code extension: `tizensdk.tizentv`.
+- Node.js 16+.
+- FFmpeg and FFprobe available on PATH.
+- MPV for synced local-player mode. MPV is intentionally not included in this repo.
 
-## External Requirements
-- **Node.js 16+** for the PC broadcaster.
-- **FFmpeg / FFprobe** available on PATH for capture, file probing, and video streaming.
-- **MPV** for synced local-player mode. MPV is intentionally not included in this repo; download a Windows MPV build yourself, then either:
-  - set `MPV_PATH=C:\path\to\mpv.exe`
-  - place it at `pc-broadcaster/vendor/mpv/mpv.exe`
-  - or keep a local ignored folder like `mpv-v0.41.0-x86_64-pc-windows-msvc/` next to `pc-broadcaster/`
+MPV options:
 
-## Setup Instructions
+```powershell
+$env:MPV_PATH = "C:\path\to\mpv.exe"
+```
 
-### 1. The TV Target
-1. Open `tv-app/` in VS Code with the Samsung Tizen TV extension.
-2. In `tv-app/js/main.js`, update `var SERVER_IP = 'YOUR_PC_IP_HERE';` to your PC's local WiFi IP (e.g., `192.168.1.5`).
-3. Use **Tizen TV: Build Signed Package**, then **Tizen TV: Launch Application** to install/run it on your TV.
+Or place MPV at either:
 
-### 2. The PC Broadcaster
-Please refer to the `README.md` inside the `pc-broadcaster/` directory for full Windows setup instructions.
+```text
+pc-broadcaster/vendor/mpv/mpv.exe
+mpv-v0.41.0-x86_64-pc-windows-msvc/mpv.exe
+```
+
+## TV Setup
+
+### 1. Install The VS Code Extension
+
+Install the Samsung Tizen TV extension from VS Code Extensions, or run:
+
+```powershell
+code --install-extension tizensdk.tizentv
+```
+
+Open the command palette with `Ctrl+Shift+P` and type `Tizen TV` to see the extension commands.
+
+### 2. Open The TV App Folder
+
+In VS Code, open this folder directly:
+
+```text
+tv-app/
+```
+
+The extension expects the Tizen project root to contain `config.xml`, so do not build from the repository root.
+
+### 3. Set Your PC IP In The TV App
+
+Find your PC IPv4 address on the same Wi-Fi/LAN as the TV:
+
+```powershell
+ipconfig
+```
+
+Edit `tv-app/js/main.js`:
+
+```js
+var SERVER_IP = '192.168.x.x';
+```
+
+Use the PC IPv4 address, not the TV IP.
+
+### 4. Enable Developer Mode On The TV
+
+On the TV:
+
+1. Connect the TV to the same network as the PC.
+2. Open **Apps**.
+3. Enter `12345` using the remote or on-screen number pad.
+4. Turn **Developer Mode** on.
+5. Enter the PC IPv4 address as **Host PC IP**.
+6. Reboot the TV.
+
+After reboot, the Apps screen should show Developer Mode enabled.
+
+### 5. Add Or Select The TV Target In VS Code
+
+In VS Code command palette:
+
+```text
+Tizen TV: Set Target Device Address
+```
+
+Enter the TV IP address.
+
+If your extension UI shows a device list/add-device command, use it to add the same TV IP and select that target. The important distinction is:
+
+- TV Developer Mode Host PC IP = your PC IP.
+- VS Code target/device address = your TV IP.
+
+### 6. Create Or Select A Certificate Profile
+
+Tizen packages must be signed before they install on a real TV.
+
+Run:
+
+```text
+Tizen TV: Run Certificate Manager
+```
+
+Create or select an author/distributor certificate profile. If build fails with no active profile, reopen Certificate Manager and set the profile active.
+
+### 7. Build The Signed Package
+
+Run:
+
+```text
+Tizen TV: Build Signed Package
+```
+
+The extension writes the `.wgt` package into the `tv-app/` workspace root. `.wgt` files are ignored by Git.
+
+### 8. Launch On The TV
+
+Run:
+
+```text
+Tizen TV: Launch Application
+```
+
+The TV app should open to the CKast standby screen, then connect to the PC server once the server is running.
+
+## PC Broadcaster Setup
+
+Install dependencies:
+
+```powershell
+cd pc-broadcaster
+npm install
+```
+
+Start the server:
+
+```powershell
+npm start
+```
+
+Open the dashboard:
+
+```text
+http://localhost:8080
+```
+
+For synced local-player mode:
+
+1. Start the server.
+2. Open the TV app.
+3. In the dashboard, enter a local media path.
+4. Click **Open**.
+5. Choose quality, fit, and subtitle options.
+6. Click **Synced Play**.
+
+## Common Fixes
+
+- **TV app does not connect:** confirm PC and TV are on the same network, `SERVER_IP` is the PC IP, and the TV Developer Mode Host PC IP is also the PC IP.
+- **VS Code cannot launch:** confirm the VS Code target/device address is the TV IP, not the PC IP.
+- **Build signed package fails:** check Certificate Manager and set an active certificate profile.
+- **App installs but old behavior remains:** uninstall/relaunch from VS Code, or rebuild after editing `tv-app/js/main.js`.
+- **MPV missing:** download MPV separately and set `MPV_PATH`, or place it in one of the supported local paths above.
+
+## Git Notes
+
+Do not commit local binaries or generated packages. The repo ignores:
+
+- MPV folders
+- `stable/`
+- `.wgt` packages
+- logs
+- runtime subtitle temp files
+
+## Sources
+
+- Samsung TizenTV VS Code extension: https://github.com/Samsung/vscode-extension-tizentv
+- Samsung TV device developer-mode flow: https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html
