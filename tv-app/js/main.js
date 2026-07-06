@@ -18,6 +18,7 @@
     var queue = [];
     var hasPlayed = false;
     var shouldAutoPlay = true;
+    var playbackMode = 'idle';
     var reconnectTimer = null;
     var evictTimer = null;
     var syncStateTimer = null;
@@ -73,21 +74,16 @@
     function startConnection(ip) {
         cleanup();
         setConnectStatus('Connecting to ' + ip + '...');
-        createMediaPipeline(true);
+        createMediaPipeline(true, 'Connecting to ' + ip + '...', 'idle');
         connectWebSocket(ip);
     }
 
-    function createMediaPipeline(autoPlay) {
+    function createMediaPipeline(autoPlay, message, mode) {
+        clearMediaPipeline(message || 'Preparing stream...');
+        playbackMode = mode || 'file';
         shouldAutoPlay = !!autoPlay && !fixedLatency.enabled;
         hasPlayed = false;
         resetFixedLatencySession('pipeline_reset');
-        queue = [];
-        sourceBuffer = null;
-
-        if (objectUrl) {
-            try { URL.revokeObjectURL(objectUrl); } catch (e) { }
-            objectUrl = null;
-        }
 
         mediaSource = new MediaSource();
         objectUrl = URL.createObjectURL(mediaSource);
@@ -116,12 +112,44 @@
         });
     }
 
-    function resetForSyncedVideo(autoPlay) {
+    function clearMediaPipeline(message) {
+        queue = [];
+        hasPlayed = false;
+        shouldAutoPlay = false;
+        playbackMode = 'idle';
+        resetFixedLatencySession('stopped');
+
         try { video.pause(); } catch (e) { }
+        try {
+            if (sourceBuffer && sourceBuffer.updating && typeof sourceBuffer.abort === 'function') {
+                sourceBuffer.abort();
+            }
+        } catch (e) { }
+
+        sourceBuffer = null;
+        mediaSource = null;
+
+        if (objectUrl) {
+            try { URL.revokeObjectURL(objectUrl); } catch (e) { }
+            objectUrl = null;
+        }
+
+        try {
+            video.removeAttribute('src');
+            video.load();
+        } catch (e) { }
+
         video.playbackRate = 1;
         overlay.classList.remove('hidden');
-        setConnectStatus(fixedLatency.enabled ? 'Buffering fixed TV delay...' : 'Buffering synced video...');
-        createMediaPipeline(!!autoPlay);
+        setConnectStatus(message || 'Stopped - waiting for stream...');
+    }
+
+    function resetForSyncedVideo(autoPlay, mode) {
+        createMediaPipeline(
+            !!autoPlay,
+            fixedLatency.enabled && mode === 'desktop' ? 'Buffering fixed TV delay...' : 'Buffering synced video...',
+            mode || 'file'
+        );
     }
 
     function connectWebSocket(ip) {
@@ -182,7 +210,9 @@
         }
 
         if (msg.type === 'reset') {
-            resetForSyncedVideo(msg.autoPlay);
+            resetForSyncedVideo(msg.autoPlay, msg.mode);
+        } else if (msg.type === 'stop') {
+            clearMediaPipeline('Stopped - waiting for stream...');
         } else if (msg.type === 'play') {
             if (fixedLatency.enabled && !fixedLatency.started) {
                 shouldAutoPlay = false;
@@ -200,6 +230,7 @@
                 video.playbackRate = rate;
             }
         } else if (msg.type === 'fixedLatency') {
+            if (msg.mode === 'file') playbackMode = 'file';
             applyFixedLatencyOptions(msg.options);
         } else if (msg.type === 'fit') {
             if (msg.mode === 'contain' || msg.mode === 'cover' || msg.mode === 'fill') {
@@ -235,7 +266,7 @@
     function applyFixedLatencyOptions(options) {
         var wasEnabled = fixedLatency.enabled;
         var normalized = normalizeFixedLatencyOptions(options);
-        fixedLatency.enabled = normalized.enabled;
+        fixedLatency.enabled = playbackMode === 'file' ? false : normalized.enabled;
         fixedLatency.targetSeconds = normalized.targetSeconds;
         fixedLatency.minBufferSeconds = normalized.minBufferSeconds;
 
@@ -299,6 +330,7 @@
     }
 
     function runFixedLatencyController() {
+        if (playbackMode !== 'desktop') return;
         if (!fixedLatency.enabled || !video || !mediaSource) return;
 
         var bufferedEnd = getBufferedEnd();
@@ -404,6 +436,7 @@
             readyState: video.readyState,
             fixedLatency: {
                 enabled: fixedLatency.enabled,
+                playbackMode: playbackMode,
                 targetSeconds: fixedLatency.targetSeconds,
                 minBufferSeconds: fixedLatency.minBufferSeconds,
                 started: fixedLatency.started,

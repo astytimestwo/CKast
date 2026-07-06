@@ -65,6 +65,42 @@ test('seeks MPV audio to TV file timestamp for large drift', () => {
     });
 });
 
+test('does not correct audio drift when automatic follow is disabled', () => {
+    const action = chooseAudioFollowAction({
+        canSync: true,
+        tvFileTimeSeconds: 132.345,
+        targetPlayerTimeSeconds: 132.345,
+        playerTimeSeconds: 130.0,
+        driftSeconds: 2.345
+    }, { enabled: false });
+
+    assert.deepEqual(action, {
+        type: 'none',
+        speed: 1,
+        reason: 'auto_follow_disabled'
+    });
+});
+
+test('does not correct audio drift after automatic follow window expires', () => {
+    const action = chooseAudioFollowAction({
+        canSync: true,
+        tvFileTimeSeconds: 132.345,
+        targetPlayerTimeSeconds: 132.345,
+        playerTimeSeconds: 130.0,
+        driftSeconds: 2.345
+    }, {
+        enabled: true,
+        nowMs: 20_000,
+        armedUntilMs: 10_000
+    });
+
+    assert.deepEqual(action, {
+        type: 'none',
+        speed: 1,
+        reason: 'auto_follow_disarmed'
+    });
+});
+
 test('nudges MPV speed for small drift and returns to normal near target', () => {
     assert.deepEqual(chooseAudioFollowAction({
         canSync: true,

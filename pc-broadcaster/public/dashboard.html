@@ -368,6 +368,9 @@
                         <button id="resyncBtn" class="dev-option" hidden disabled>Resync</button>
                         <button id="stopTvVideoBtn" disabled>Stop TV Video</button>
                     </div>
+                    <div class="row">
+                        <label class="check-row"><input id="autoAudioFollowEnabled" type="checkbox"> Start/seek sync assist</label>
+                    </div>
                     <div class="sync-grid dev-option" hidden>
                         <button id="videoBackBtn" disabled>Video -100ms</button>
                         <button id="videoForwardBtn" disabled>Video +100ms</button>
@@ -430,6 +433,7 @@
         const syncPlayBtn = document.getElementById('syncPlayBtn');
         const resyncBtn = document.getElementById('resyncBtn');
         const stopTvVideoBtn = document.getElementById('stopTvVideoBtn');
+        const autoAudioFollowEnabled = document.getElementById('autoAudioFollowEnabled');
         const videoBackBtn = document.getElementById('videoBackBtn');
         const videoForwardBtn = document.getElementById('videoForwardBtn');
         const videoBackBigBtn = document.getElementById('videoBackBigBtn');
@@ -604,6 +608,9 @@
         function renderTvVideo(tvVideo, tvSyncState, sync) {
             currentTvVideo = tvVideo || currentTvVideo;
             currentSync = sync || currentSync;
+            if (sync && autoAudioFollowEnabled) {
+                autoAudioFollowEnabled.checked = !!sync.autoAudioFollowEnabled;
+            }
             const active = !!(currentTvVideo && currentTvVideo.active);
             resyncBtn.disabled = !(currentPlayer && currentPlayer.loaded) || !active;
             stopTvVideoBtn.disabled = !active;
@@ -617,6 +624,9 @@
             if (sync && sync.pendingResume) parts.push('prebuffering');
             if (currentSync && Number.isFinite(currentSync.manualVideoOffsetSeconds)) {
                 parts.push('offset ' + currentSync.manualVideoOffsetSeconds.toFixed(2) + 's');
+            }
+            if (currentSync && currentSync.autoAudioFollowEnabled) {
+                parts.push(currentSync.autoAudioFollowArmed ? 'sync assist armed' : 'sync assist idle');
             }
             if (tvSyncState && Number.isFinite(tvSyncState.drift)) {
                 parts.push('drift ' + tvSyncState.drift.toFixed(2) + 's');
@@ -955,6 +965,19 @@
         videoForwardBtn.onclick = () => nudgeVideo(0.1);
         videoBackBigBtn.onclick = () => nudgeVideo(-0.5);
         videoForwardBigBtn.onclick = () => nudgeVideo(0.5);
+
+        autoAudioFollowEnabled.onchange = async () => {
+            try {
+                const data = await postJson('/api/player/sync-options', {
+                    autoAudioFollowEnabled: autoAudioFollowEnabled.checked
+                });
+                renderPlayer(data.player);
+                renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
+            } catch (e) {
+                autoAudioFollowEnabled.checked = !!(currentSync && currentSync.autoAudioFollowEnabled);
+                setStatus(tvVideoStatus, e.message, 'err');
+            }
+        };
 
         if (showDevOptions) {
             try { showDevOptions.checked = localStorage.getItem('ckast-show-dev-options') === '1'; } catch (e) { }

@@ -224,30 +224,33 @@ class FileVideoStreamer extends EventEmitter {
             'pipe:1'
         ];
 
-        this.ffmpegProcess = spawn(resolveFfmpegPath(), ffmpegArgs, {
+        const ffmpegProcess = spawn(resolveFfmpegPath(), ffmpegArgs, {
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe']
         });
+        this.ffmpegProcess = ffmpegProcess;
         this.emit('ffmpeg_spawn', {
-            pid: this.ffmpegProcess.pid,
+            pid: ffmpegProcess.pid,
             command: resolveFfmpegPath(),
             args: ffmpegArgs
         });
 
-        this.ffmpegProcess.stdout.pipe(this.mp4frag);
+        ffmpegProcess.stdout.pipe(this.mp4frag);
 
-        this.ffmpegProcess.stderr.on('data', (chunk) => {
+        ffmpegProcess.stderr.on('data', (chunk) => {
             const message = chunk.toString().trim();
             if (message) this.emit('log', message);
         });
 
-        this.ffmpegProcess.once('error', (err) => {
+        ffmpegProcess.once('error', (err) => {
+            if (this.ffmpegProcess !== ffmpegProcess) return;
             this.error = err.message;
             this.mode = 'error';
             this.emit('error', err);
         });
 
-        this.ffmpegProcess.once('close', (code) => {
+        ffmpegProcess.once('close', (code) => {
+            if (this.ffmpegProcess !== ffmpegProcess) return;
             if (this.mode !== 'idle' && code !== 0 && code !== null) {
                 this.error = 'FFmpeg exited with code ' + code;
                 this.mode = 'error';
@@ -287,8 +290,9 @@ class FileVideoStreamer extends EventEmitter {
         }
 
         if (this.ffmpegProcess) {
-            this.ffmpegProcess.kill('SIGKILL');
+            const ffmpegProcess = this.ffmpegProcess;
             this.ffmpegProcess = null;
+            ffmpegProcess.kill('SIGKILL');
         }
 
         if (this.mp4frag) {

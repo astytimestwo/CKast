@@ -25,6 +25,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const player = new MpvController();
 const fileVideo = new FileVideoStreamer();
+const AUTO_AUDIO_FOLLOW_WINDOW_MS = 15000;
 
 function freshState() {
     return {
@@ -49,6 +50,8 @@ let lastPlaybackRate = 1;
 let lastAudioFollowSpeed = 1;
 let lastAudioFollowSeekAt = 0;
 let manualVideoOffsetSeconds = 0;
+let autoAudioFollowEnabled = true;
+let autoAudioFollowArmedUntilMs = 0;
 let streamOptions = {
     bitrateKbps: 16000,
     fitMode: 'contain',
@@ -179,6 +182,24 @@ function clearSyncResume() {
         clearTimeout(syncResumeTimer);
         syncResumeTimer = null;
     }
+}
+
+function armAutoAudioFollow(delaySeconds = 0) {
+    if (!autoAudioFollowEnabled) {
+        autoAudioFollowArmedUntilMs = 0;
+        return;
+    }
+
+    const delayMs = Math.max(0, Number(delaySeconds) || 0) * 1000;
+    autoAudioFollowArmedUntilMs = Date.now() + delayMs + AUTO_AUDIO_FOLLOW_WINDOW_MS;
+}
+
+function disarmAutoAudioFollow() {
+    autoAudioFollowArmedUntilMs = 0;
+}
+
+function isAutoAudioFollowArmed(nowMs = Date.now()) {
+    return autoAudioFollowEnabled && nowMs <= autoAudioFollowArmedUntilMs;
 }
 
 function scheduleSyncedResume(delaySeconds) {
@@ -319,6 +340,7 @@ function sendFilePlaybackTvControls(reason) {
     sendTvControl({
         type: 'fixedLatency',
         reason: reason || 'file_playback',
+        mode: 'file',
         options: {
             enabled: false,
             targetSeconds: 0.5,
@@ -333,6 +355,7 @@ function resetTvForDesktopCapture() {
     sendFixedLatencyControl({ force: true, reason: 'desktop_capture_start' });
     sendTvControl({
         type: 'reset',
+        mode: 'desktop',
         autoPlay: !fixedLatencyOptions.enabled,
         reason: 'desktop_capture_start'
     });
@@ -360,7 +383,7 @@ async function startTvVideo(options) {
     await player.setSpeed(1);
     lastAudioFollowSpeed = 1;
     sendFilePlaybackTvControls('file_playback_start');
-    sendTvControl({ type: 'reset' });
+    sendTvControl({ type: 'reset', mode: 'file' });
     resetSegmentStats('file');
 
     fileVideo.start(status.filePath, {
@@ -370,6 +393,7 @@ async function startTvVideo(options) {
     });
 
     if (options && options.autoPlay) {
+        armAutoAudioFollow(delaySeconds);
         scheduleSyncedResume(delaySeconds);
     }
 
@@ -386,12 +410,13 @@ async function seekPlayerAndTv(targetTime, shouldResume) {
     const playerStatus = await player.seek(targetTime);
 
     if (fileVideo.getStatus().active || fileVideo.getStatus().filePath) {
-        sendTvControl({ type: 'reset' });
+        sendTvControl({ type: 'reset', mode: 'file' });
         resetSegmentStats('file');
         fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
     }
 
     if (shouldResume) {
+        armAutoAudioFollow(5);
         scheduleSyncedResume(5);
     }
 
@@ -399,9 +424,10 @@ async function seekPlayerAndTv(targetTime, shouldResume) {
 }
 
 async function handleTvSyncState(tvState) {
+    const now = Date.now();
     S.tvSyncState = {
         ...tvState,
-        receivedAt: Date.now()
+        receivedAt: now
     };
     updateMirrorSyncFromTvSyncState(tvState);
     if (S.ffmpegProcess && fixedLatencyOptions.enabled) {
@@ -425,8 +451,20 @@ async function handleTvSyncState(tvState) {
 
     if (!fileSync.canSync) return;
 
-    const action = chooseAudioFollowAction(fileSync);
-    const now = Date.now();
+    const action = chooseAudioFollowAction(fileSync, {
+        enabled: autoAudioFollowEnabled,
+        armedUntilMs: autoAudioFollowArmedUntilMs,
+        nowMs: now
+    });
+
+    if (action.type === 'none') {
+        if (action.reason === 'auto_follow_disarmed' && lastAudioFollowSpeed !== 1) {
+            lastAudioFollowSpeed = 1;
+            lastPlaybackRate = 1;
+            await player.setSpeed(1);
+        }
+        return;
+    }
 
     if (action.type === 'seek' && !syncResyncing && now - lastAudioFollowSeekAt >= 1000) {
         syncResyncing = true;
@@ -435,6 +473,8 @@ async function handleTvSyncState(tvState) {
             await player.seek(action.targetTimeSeconds);
             await player.setSpeed(1);
             lastAudioFollowSpeed = 1;
+            lastPlaybackRate = 1;
+            disarmAutoAudioFollow();
         } catch (err) {
             reportError('file_audio_follow_seek_failed', err);
         } finally {
@@ -478,7 +518,9 @@ function getPlayerBundle() {
             targetDelaySeconds: 5,
             lastPlaybackRate,
             lastAudioFollowSpeed,
-            manualVideoOffsetSeconds
+            manualVideoOffsetSeconds,
+            autoAudioFollowEnabled,
+            autoAudioFollowArmed: isAutoAudioFollowArmed()
         },
         mirrorSync: getMirrorSyncState(),
         fixedLatency: getFixedLatencyState()
@@ -671,6 +713,7 @@ app.post('/api/player/play', asyncRoute(async (req, res) => {
 
 app.post('/api/player/pause', asyncRoute(async (req, res) => {
     clearSyncResume();
+    disarmAutoAudioFollow();
     sendTvControl({ type: 'pause' });
     if (player.getStatus().loaded) {
         await player.setSpeed(1);
@@ -733,7 +776,8 @@ app.post('/api/player/mirror/sync-audio', asyncRoute(async (req, res) => {
 
 app.post('/api/player/stop', asyncRoute(async (req, res) => {
     clearSyncResume();
-    sendTvControl({ type: 'reset' });
+    disarmAutoAudioFollow();
+    sendTvControl({ type: 'stop' });
     fileVideo.stop();
     const status = await player.stop();
     res.json({ success: true, player: status, tvVideo: fileVideo.getStatus() });
@@ -751,7 +795,8 @@ app.post('/api/player/tv/start', asyncRoute(async (req, res) => {
 
 app.post('/api/player/tv/stop', asyncRoute(async (req, res) => {
     clearSyncResume();
-    sendTvControl({ type: 'reset' });
+    disarmAutoAudioFollow();
+    sendTvControl({ type: 'stop' });
     const tvVideo = fileVideo.stop();
     res.json({ success: true, tvVideo, player: player.getStatus() });
 }));
@@ -771,10 +816,13 @@ app.post('/api/player/tv/options', asyncRoute(async (req, res) => {
         await player.setSpeed(1);
         lastAudioFollowSpeed = 1;
         sendFilePlaybackTvControls('file_options_restart');
-        sendTvControl({ type: 'reset' });
+        sendTvControl({ type: 'reset', mode: 'file' });
         resetSegmentStats('file');
         fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
-        if (playerStatus.paused === false) scheduleSyncedResume(5);
+        if (playerStatus.paused === false) {
+            armAutoAudioFollow(5);
+            scheduleSyncedResume(5);
+        }
     }
 
     res.json({ success: true, ...getPlayerBundle(), streamOptions });
@@ -795,13 +843,31 @@ app.post('/api/player/tv/nudge', asyncRoute(async (req, res) => {
         await player.setSpeed(1);
         lastAudioFollowSpeed = 1;
         sendFilePlaybackTvControls('file_nudge_restart');
-        sendTvControl({ type: 'reset' });
+        sendTvControl({ type: 'reset', mode: 'file' });
         resetSegmentStats('file');
         fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
-        if (playerStatus.paused === false) scheduleSyncedResume(5);
+        if (playerStatus.paused === false) {
+            armAutoAudioFollow(5);
+            scheduleSyncedResume(5);
+        }
     }
 
     res.json({ success: true, ...getPlayerBundle(), streamOptions });
+}));
+
+app.post('/api/player/sync-options', asyncRoute(async (req, res) => {
+    autoAudioFollowEnabled = !!(req.body && req.body.autoAudioFollowEnabled);
+    if (autoAudioFollowEnabled) {
+        armAutoAudioFollow(0);
+    } else {
+        disarmAutoAudioFollow();
+    }
+    if (!autoAudioFollowEnabled && player.getStatus().loaded) {
+        await player.setSpeed(1);
+        lastAudioFollowSpeed = 1;
+        lastPlaybackRate = 1;
+    }
+    res.json({ success: true, ...getPlayerBundle() });
 }));
 
 app.get('/api/player/status', asyncRoute(async (req, res) => {
@@ -816,7 +882,9 @@ app.get('/api/player/status', asyncRoute(async (req, res) => {
             targetDelaySeconds: 5,
             lastPlaybackRate,
             lastAudioFollowSpeed,
-            manualVideoOffsetSeconds
+            manualVideoOffsetSeconds,
+            autoAudioFollowEnabled,
+            autoAudioFollowArmed: isAutoAudioFollowArmed()
         },
         mirrorSync: getMirrorSyncState(),
         fixedLatency: getFixedLatencyState(),
@@ -837,7 +905,16 @@ app.get('/status', (req, res) => {
         tvVideo: fileVideo.getStatus(),
         tvSyncState: S.tvSyncState,
         mirrorSync: getMirrorSyncState(),
-        fixedLatency: getFixedLatencyState()
+        fixedLatency: getFixedLatencyState(),
+        sync: {
+            pendingResume: !!syncResumeTimer,
+            targetDelaySeconds: 5,
+            lastPlaybackRate,
+            lastAudioFollowSpeed,
+            manualVideoOffsetSeconds,
+            autoAudioFollowEnabled,
+            autoAudioFollowArmed: isAutoAudioFollowArmed()
+        }
     });
 });
 

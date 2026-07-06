@@ -40,7 +40,26 @@ function calculateFileSyncState(input) {
     };
 }
 
-function chooseAudioFollowAction(input) {
+function chooseAudioFollowAction(input, options = {}) {
+    if (options.enabled === false) {
+        return {
+            type: 'none',
+            speed: 1,
+            reason: 'auto_follow_disabled'
+        };
+    }
+    if (options.armedUntilMs !== undefined) {
+        const nowMs = finiteNumber(options.nowMs);
+        const armedUntilMs = finiteNumber(options.armedUntilMs);
+        if (armedUntilMs === null || (nowMs === null ? Date.now() : nowMs) > armedUntilMs) {
+            return {
+                type: 'none',
+                speed: 1,
+                reason: 'auto_follow_disarmed'
+            };
+        }
+    }
+
     const state = input || {};
     if (!state.canSync) {
         return {
