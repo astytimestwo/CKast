@@ -14,7 +14,7 @@ CKast is a local Wi-Fi casting setup for Samsung Tizen TVs. The TV app receives 
 - Windows PC and Samsung Tizen TV on the same local network.
 - VS Code.
 - Samsung **Tizen TV** VS Code extension: `tizensdk.tizentv`.
-- Node.js 16+.
+- Node.js 20+.
 - FFmpeg and FFprobe available on PATH.
 - MPV for synced local-player mode. MPV is intentionally not included in this repo.
 

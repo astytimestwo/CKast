@@ -32,17 +32,17 @@
 **Interfaces:**
 - Produces: a CI matrix for Node 20 and 22 and a static test enforcing the public-release contract.
 
-- [ ] **Step 1: Add a failing repository-readiness test**
+- [x] **Step 1: Add a failing repository-readiness test**
 
 Create assertions that require `engines.node` to be `>=20`, require CI matrix values 20 and 22 plus the three approved npm commands, reject `10.204.247.239`, require `192.168.1.10`, and require the root `js/main.js` path not to exist.
 
-- [ ] **Step 2: Run the focused test and verify failure**
+- [x] **Step 2: Run the focused test and verify failure**
 
 Run: `node --test test/repositoryPublishing.test.js`
 
 Expected: failure because the package still promises Node 16, the personal IP and empty file remain, and the workflow does not exist.
 
-- [ ] **Step 3: Apply the minimal publishing changes**
+- [x] **Step 3: Apply the minimal publishing changes**
 
 Set `engines.node` to `>=20`, update Node requirements in both READMEs, replace the TV fallback IP with `192.168.1.10`, delete the empty root file, and create `.github/workflows/ci.yml` with push/pull-request triggers and this job sequence:
 
@@ -60,7 +60,7 @@ Set `engines.node` to `>=20`, update Node requirements in both READMEs, replace 
 
 Set each run step's `working-directory` to `pc-broadcaster` and matrix versions to `[20, 22]`.
 
-- [ ] **Step 4: Run the focused and full tests**
+- [x] **Step 4: Run the focused and full tests**
 
 Run: `node --test test/repositoryPublishing.test.js`
 
@@ -82,21 +82,21 @@ Expected: all tests pass.
 **Interfaces:**
 - Produces: public reporting and contribution policies linked to runnable project commands.
 
-- [ ] **Step 1: Extend the readiness test**
+- [x] **Step 1: Extend the readiness test**
 
 Assert that both root documents exist; `SECURITY.md` mentions trusted local networks, private reporting, and no public disclosure; `CONTRIBUTING.md` contains `npm ci`, `npm test`, and `npm run check`.
 
-- [ ] **Step 2: Run the test and verify failure**
+- [x] **Step 2: Run the test and verify failure**
 
 Run: `node --test test/repositoryPublishing.test.js`
 
 Expected: failure because the two policy documents do not exist.
 
-- [ ] **Step 3: Add concise policy documents**
+- [x] **Step 3: Add concise policy documents**
 
 Document CKast's unencrypted LAN trust boundary, private reporting through GitHub's vulnerability-reporting interface or repository-owner contact, supported-version policy, local setup, test commands, focused branches, and pull-request expectations.
 
-- [ ] **Step 4: Run the focused test**
+- [x] **Step 4: Run the focused test**
 
 Run: `node --test test/repositoryPublishing.test.js`
 
@@ -112,19 +112,19 @@ Expected: pass.
 **Interfaces:**
 - Produces: one clean local publishing-readiness commit; no remote changes.
 
-- [ ] **Step 1: Run verification**
+- [x] **Step 1: Run verification**
 
 Run `npm test`, `npm run check`, `npm audit --omit=dev`, `git diff --check`, and syntax-check every tracked JavaScript file.
 
-- [ ] **Step 2: Re-run public-content scans**
+- [x] **Step 2: Re-run public-content scans**
 
 Verify no tracked private-key/token markers, environment files, personal fallback IP, generated `.wgt` package, archive, executable, or file over 1 MiB.
 
-- [ ] **Step 3: Review the exact diff**
+- [x] **Step 3: Review the exact diff**
 
 Confirm changes are limited to the approved cleanup, CI, policies, tests, runtime requirement, design, and implementation plan.
 
-- [ ] **Step 4: Commit locally**
+- [x] **Step 4: Commit locally**
 
 ```powershell
 git add -A

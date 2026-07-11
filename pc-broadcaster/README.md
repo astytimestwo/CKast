@@ -3,7 +3,7 @@
 This is the backend server that performs the heavy lifting for the CKast system. It leverages Node.js, `ws` (WebSockets), native `FFmpeg`, and optional `MPV` for synced local-file playback.
 
 ## Prerequisites
-1. **Node.js** (v16.0 or higher recommended).
+1. **Node.js** (v20.0 or higher).
 2. **FFmpeg**: Must be installed and registered in your Windows Environment Variables or PATH.
    - Easiest installation via Windows terminal: `winget install Gyan.FFmpeg`
    - Verify by typing `ffmpeg -version` in your terminal.

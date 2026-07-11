@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: pc-broadcaster/package-lock.json
+      - name: Install exact dependencies
+        run: npm ci
+        working-directory: pc-broadcaster
+      - name: Run tests
+        run: npm test
+        working-directory: pc-broadcaster
+      - name: Check server syntax
+        run: npm run check
+        working-directory: pc-broadcaster

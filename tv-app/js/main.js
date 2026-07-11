@@ -4,7 +4,7 @@
 (function () {
     'use strict';
 
-    var DEFAULT_SERVER_IP = '10.204.247.239';
+    var DEFAULT_SERVER_IP = '192.168.1.10';
     var SERVER_IP_STORAGE_KEY = 'ckast-server-ip';
     var SERVER_PORT = 8080;
     var MAX_QUEUE_SEGMENTS = 32;
