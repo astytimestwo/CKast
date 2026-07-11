@@ -1,19 +1,17 @@
 @echo off
 title CKast Broadcaster Server
 color 0A
+cd /d "%~dp0"
 
 echo ===================================================
 echo             CKast TV Streaming Server              
 echo ===================================================
 echo.
-echo [*] Checking for existing active TV servers...
+echo [*] Checking the local listener on port 8080...
 
-:: Silently terminate any background node.exe running "server.js"
-wmic process where "name='node.exe' and commandline like '%%server.js%%'" call terminate >nul 2>&1
-
-:: Edge-case: ensure port 8080 is completely released
-FOR /F "tokens=5" %%P IN ('netstat -a -n -o ^| findstr :8080') DO (
-    echo [*] Port 8080 is still locked by PID %%P. Force terminating...
+:: Stop only the process proven to own the local listening socket.
+FOR /F "usebackq delims=" %%P IN (`powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue ^| Select-Object -ExpandProperty OwningProcess -Unique"`) DO (
+    echo [*] Port 8080 is owned by PID %%P. Terminating that listener...
     taskkill /PID %%P /F >nul 2>&1
 )
 

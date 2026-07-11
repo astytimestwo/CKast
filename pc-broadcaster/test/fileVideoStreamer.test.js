@@ -96,3 +96,79 @@ test('stopped ffmpeg close event does not report a stream error', () => {
         fs.rmSync(tempFile, { force: true });
     }
 });
+
+test('file input is paced in real time before FFmpeg opens it', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-pacing-test.mp4');
+    fs.writeFileSync(tempFile, 'not real media');
+    let ffmpegArgs = null;
+    const { FileVideoStreamer, restore } = freshStreamerWithSpawn((command, args) => {
+        ffmpegArgs = args;
+        return new FakeProcess(3000);
+    });
+
+    try {
+        const streamer = new FileVideoStreamer();
+        streamer.start(tempFile, { sendSegment() {} });
+
+        const readRateIndex = ffmpegArgs.indexOf('-re');
+        const inputIndex = ffmpegArgs.indexOf('-i');
+        assert.ok(readRateIndex >= 0);
+        assert.ok(readRateIndex < inputIndex);
+        streamer.stop();
+    } finally {
+        restore();
+        fs.rmSync(tempFile, { force: true });
+    }
+});
+
+test('subtitle setup failure leaves the file streamer in an error state', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-subtitle-error.mp4');
+    const missingSubtitle = path.join(os.tmpdir(), 'ckast-missing-subtitle.srt');
+    fs.writeFileSync(tempFile, 'not real media');
+    fs.rmSync(missingSubtitle, { force: true });
+    const { FileVideoStreamer } = require('../lib/fileVideoStreamer');
+    const streamer = new FileVideoStreamer();
+
+    try {
+        assert.throws(() => streamer.start(tempFile, {
+            subtitlesEnabled: true,
+            externalSubtitlePath: missingSubtitle,
+            subtitleDelay: 1,
+            sendSegment() {}
+        }), /Subtitle file not found/);
+
+        const status = streamer.getStatus();
+        assert.equal(status.active, false);
+        assert.equal(status.mode, 'error');
+        assert.match(status.error, /Subtitle file not found/);
+    } finally {
+        streamer.stop();
+        fs.rmSync(tempFile, { force: true });
+    }
+});
+
+test('ended file encoder remains controllable while TV playback may be buffered', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-ended-buffer.mp4');
+    fs.writeFileSync(tempFile, 'not real media');
+    let ffmpegProcess;
+    const { FileVideoStreamer, restore } = freshStreamerWithSpawn(() => {
+        ffmpegProcess = new FakeProcess(4000);
+        return ffmpegProcess;
+    });
+
+    try {
+        const streamer = new FileVideoStreamer();
+        streamer.start(tempFile, { sendSegment() {} });
+        ffmpegProcess.emit('close', 0);
+
+        assert.equal(streamer.getStatus().active, false);
+        assert.equal(streamer.getStatus().mode, 'ended');
+        assert.equal(streamer.getStatus().playbackAvailable, true);
+
+        streamer.stop();
+        assert.equal(streamer.getStatus().playbackAvailable, false);
+    } finally {
+        restore();
+        fs.rmSync(tempFile, { force: true });
+    }
+});

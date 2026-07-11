@@ -115,13 +115,10 @@ Navigate to the `pc-broadcaster/` folder.
     ```
 
 #### Option B: Automatic Cleanup & Launch (Recommended)
-Double-click `start.bat`. The script executes the following diagnostic commands before booting Node:
-1.  Queries processes listening on port 8080: `netstat -a -n -o | findstr :8080`
-2.  Kills any existing `node.exe` processes running `server.js`:
-    ```cmd
-    wmic process where "name='node.exe' and commandline like '%%server.js%%'" call terminate
-    ```
-3.  Force-closes the socket handler if still locked, then instantiates `node server.js`.
+Double-click `start.bat`. The script first changes to its own directory, queries
+`Get-NetTCPConnection` for a process in the `Listen` state on local port 8080, terminates
+only that owning PID when present, and then starts `node server.js`. It does not scan for or
+terminate every Node process whose command line contains `server.js`.
 
 ### Initiating the Mirror Stream
 1.  Launch the **CKast** App on the Tizen TV (displays "Connecting to server...").
@@ -165,8 +162,9 @@ const ffmpegArgs = [
 
 ### Self-Healing & Sleep State Recovery (Watchdog)
 To prevent the stream from hanging when the PC sleeps, locked UAC windows pop up, or the display shuts off, a custom server-side watchdog monitors the pipeline:
-- Every time `mp4frag` outputs a fragment, `resetWatchdog()` clears the timer.
-- If no fragments are received within `5000ms`, the watchdog fires, kills the frozen FFmpeg process, and calls `startCapture()` to reboot the stream.
+- The watchdog is armed as soon as FFmpeg starts, before the first initialization fragment, and refreshed by subsequent initialization and media fragments.
+- If no fragment arrives within `5000ms`, the desktop-capture owner terminates only its current FFmpeg process and schedules one generation-guarded restart.
+- An unexpected FFmpeg exit is reported as inactive while that restart is pending; callbacks from an older process cannot alter the replacement process.
 - When the PC screen wakes up, the watchdog automatically self-heals and resumes the stream on the TV without manual intervention.
 
 ---

@@ -51,9 +51,24 @@ function resolveMpvPath() {
     };
 }
 
+function buildMpvArgs(pipePath) {
+    return [
+        '--idle=yes',
+        '--video=no',
+        '--pause=yes',
+        '--input-terminal=no',
+        '--terminal=no',
+        '--input-ipc-server=' + pipePath
+    ];
+}
+
 class MpvController extends EventEmitter {
-    constructor() {
+    constructor(options = {}) {
         super();
+        this.spawnProcess = options.spawnProcess || spawn;
+        this.connectSocket = options.connectSocket || net.connect;
+        this.pipeConnectTimeoutMs = options.pipeConnectTimeoutMs || PIPE_CONNECT_TIMEOUT_MS;
+        this.pipeRetryMs = options.pipeRetryMs || PIPE_RETRY_MS;
         this.process = null;
         this.socket = null;
         this.pipePath = null;
@@ -201,21 +216,21 @@ class MpvController extends EventEmitter {
     }
 
     async stop() {
-        for (const pending of this.pending.values()) {
-            clearTimeout(pending.timeout);
-            pending.reject(new Error('MPV stopped'));
-        }
-        this.pending.clear();
+        this.rejectPending(new Error('MPV stopped'));
 
         if (this.socket) {
-            this.socket.destroy();
+            const socket = this.socket;
             this.socket = null;
+            socket.destroy();
         }
 
         if (this.process) {
-            this.process.kill();
+            const mpvProcess = this.process;
             this.process = null;
+            mpvProcess.kill();
         }
+
+        this.buffer = '';
 
         this.state.running = false;
         this.state.connected = false;
@@ -239,52 +254,71 @@ class MpvController extends EventEmitter {
         }
 
         this.pipePath = '\\\\.\\pipe\\ckast-mpv-' + process.pid + '-' + Date.now();
-        const args = [
-            '--idle=yes',
-            '--force-window=yes',
-            '--pause=yes',
-            '--input-terminal=no',
-            '--terminal=no',
-            '--input-ipc-server=' + this.pipePath
-        ];
+        const args = buildMpvArgs(this.pipePath);
 
-        this.process = spawn(mpvPath.command, args, {
+        const mpvProcess = this.spawnProcess(mpvPath.command, args, {
             windowsHide: true,
             stdio: ['ignore', 'ignore', 'pipe']
         });
+        this.process = mpvProcess;
 
         this.state.running = true;
         this.state.error = null;
 
-        this.process.once('error', (err) => {
+        mpvProcess.once('error', (err) => {
+            if (this.process !== mpvProcess) return;
             this.state.error = err.message;
             this.state.running = false;
             this.state.connected = false;
             this.process = null;
+            this.rejectPending(err);
             this.emit('error', err);
         });
 
-        this.process.stderr.on('data', (chunk) => {
+        mpvProcess.stderr.on('data', (chunk) => {
             const message = chunk.toString().trim();
             if (message) this.emit('log', message);
         });
 
-        this.process.once('exit', (code) => {
+        mpvProcess.once('exit', (code) => {
+            if (this.process !== mpvProcess) return;
             this.process = null;
             this.state.running = false;
             this.state.connected = false;
             this.state.loaded = false;
+            this.rejectPending(new Error('MPV exited'));
             if (this.socket) {
-                this.socket.destroy();
+                const socket = this.socket;
                 this.socket = null;
+                socket.destroy();
             }
+            this.buffer = '';
             if (code !== 0 && code !== null) {
                 this.state.error = 'MPV exited with code ' + code;
             }
         });
 
-        await this.connectPipe();
-        await this.observeProperties();
+        try {
+            await this.connectPipe();
+            await this.observeProperties();
+        } catch (err) {
+            if (this.process === mpvProcess) {
+                this.process = null;
+                this.state.running = false;
+                this.state.connected = false;
+                this.state.loaded = false;
+                this.state.error = err.message;
+                this.rejectPending(err);
+                if (this.socket) {
+                    const socket = this.socket;
+                    this.socket = null;
+                    socket.destroy();
+                }
+                this.buffer = '';
+                mpvProcess.kill();
+            }
+            throw err;
+        }
     }
 
     connectPipe() {
@@ -297,7 +331,7 @@ class MpvController extends EventEmitter {
                     return;
                 }
 
-                const socket = net.connect(this.pipePath);
+                const socket = this.connectSocket(this.pipePath);
 
                 socket.once('connect', () => {
                     this.socket = socket;
@@ -308,11 +342,11 @@ class MpvController extends EventEmitter {
 
                 socket.once('error', (err) => {
                     socket.destroy();
-                    if (Date.now() - startedAt > PIPE_CONNECT_TIMEOUT_MS) {
+                    if (Date.now() - startedAt > this.pipeConnectTimeoutMs) {
                         reject(new Error('Could not connect to MPV IPC pipe: ' + err.message));
                         return;
                     }
-                    setTimeout(tryConnect, PIPE_RETRY_MS);
+                    setTimeout(tryConnect, this.pipeRetryMs);
                 });
             };
 
@@ -334,8 +368,11 @@ class MpvController extends EventEmitter {
         });
 
         socket.on('close', () => {
+            if (this.socket !== socket) return;
             this.state.connected = false;
             this.socket = null;
+            this.rejectPending(new Error('MPV IPC connection closed'));
+            this.buffer = '';
         });
     }
 
@@ -411,6 +448,14 @@ class MpvController extends EventEmitter {
         });
     }
 
+    rejectPending(error) {
+        for (const pending of this.pending.values()) {
+            clearTimeout(pending.timeout);
+            pending.reject(error);
+        }
+        this.pending.clear();
+    }
+
     assertProcess() {
         if (!this.process) {
             throw new Error('MPV is not running. Open a media file first.');
@@ -426,6 +471,7 @@ class MpvController extends EventEmitter {
 }
 
 module.exports = {
+    buildMpvArgs,
     MpvController,
     resolveMpvPath
 };

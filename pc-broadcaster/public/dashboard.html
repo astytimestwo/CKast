@@ -452,6 +452,8 @@
         let currentFixedLatency = null;
         let isSeeking = false;
         let streamControlsHydrated = false;
+        let statusRequestInFlight = false;
+        const latchedStatusErrors = new WeakSet();
 
         function applyDevOptionVisibility() {
             const show = !!(showDevOptions && showDevOptions.checked);
@@ -464,10 +466,27 @@
         }
 
         function setStatus(el, msg, type) {
+            if (latchedStatusErrors.has(el)) return;
             const wasDevOption = el.classList.contains('dev-option');
             el.textContent = msg;
             el.className = 'status ' + (type || '');
             if (wasDevOption) el.classList.add('dev-option');
+        }
+
+        function clearStatusLatch(el) {
+            latchedStatusErrors.delete(el);
+        }
+
+        function setActionStatus(el, msg, type) {
+            clearStatusLatch(el);
+            setStatus(el, msg, type);
+            latchedStatusErrors.add(el);
+        }
+
+        function setActionError(el, error) {
+            clearStatusLatch(el);
+            setStatus(el, error && error.message ? error.message : String(error), 'err');
+            latchedStatusErrors.add(el);
         }
 
         function formatTime(seconds) {
@@ -510,8 +529,8 @@
             startTvVideoBtn.disabled = !active;
             syncPlayBtn.disabled = !active;
             applyStreamOptionsBtn.disabled = !active;
-            resyncBtn.disabled = !active || !(currentTvVideo && currentTvVideo.active);
-            stopTvVideoBtn.disabled = !(currentTvVideo && currentTvVideo.active);
+            resyncBtn.disabled = !active || !(currentTvVideo && currentTvVideo.playbackAvailable);
+            stopTvVideoBtn.disabled = !(currentTvVideo && currentTvVideo.playbackAvailable);
             videoBackBtn.disabled = !active;
             videoForwardBtn.disabled = !active;
             videoBackBigBtn.disabled = !active;
@@ -611,12 +630,21 @@
             if (sync && autoAudioFollowEnabled) {
                 autoAudioFollowEnabled.checked = !!sync.autoAudioFollowEnabled;
             }
-            const active = !!(currentTvVideo && currentTvVideo.active);
+            const active = !!(currentTvVideo && currentTvVideo.playbackAvailable);
             resyncBtn.disabled = !(currentPlayer && currentPlayer.loaded) || !active;
             stopTvVideoBtn.disabled = !active;
 
             if (!currentTvVideo || currentTvVideo.mode === 'idle') {
                 setStatus(tvVideoStatus, 'TV video idle', '');
+                return;
+            }
+
+            if (sync && sync.readinessTimedOut) {
+                setStatus(
+                    tvVideoStatus,
+                    'TV did not reach the requested buffer; check the TV connection and stream settings',
+                    'err'
+                );
                 return;
             }
 
@@ -697,6 +725,8 @@
         }
 
         async function updateStatus() {
+            if (statusRequestInFlight) return;
+            statusRequestInFlight = true;
             try {
                 const [captureRes, playerRes] = await Promise.all([
                     fetch('/status').then((res) => res.json()),
@@ -734,32 +764,45 @@
             } catch (e) {
                 console.error(e);
                 setStatus(globalStatus, 'Server unreachable', 'err');
+            } finally {
+                statusRequestInFlight = false;
             }
         }
 
         startBtn.onclick = async () => {
-            setStatus(captureStatus, 'Initializing FFmpeg...', '');
-            await postJson('/start');
-            updateStatus();
+            try {
+                setActionStatus(captureStatus, 'Initializing FFmpeg...', '');
+                await postJson('/start');
+                clearStatusLatch(captureStatus);
+                updateStatus();
+            } catch (e) {
+                setActionError(captureStatus, e);
+            }
         };
 
         stopBtn.onclick = async () => {
-            setStatus(captureStatus, 'Terminating...', '');
-            await postJson('/stop');
-            updateStatus();
+            try {
+                setActionStatus(captureStatus, 'Terminating...', '');
+                await postJson('/stop');
+                clearStatusLatch(captureStatus);
+                updateStatus();
+            } catch (e) {
+                setActionError(captureStatus, e);
+            }
         };
 
         applyFixedLatencyBtn.onclick = async () => {
             try {
                 applyFixedLatencyBtn.disabled = true;
-                setStatus(fixedLatencyStatus, 'Applying TV delay target...', '');
+                setActionStatus(fixedLatencyStatus, 'Applying TV delay target...', '');
                 const data = await postJson('/api/fixed-latency', {
                     enabled: fixedLatencyEnabled.checked,
                     targetSeconds: Number(fixedLatencyInput.value) || 2.5
                 });
+                clearStatusLatch(fixedLatencyStatus);
                 renderFixedLatency(data.fixedLatency, data.tvSyncState);
             } catch (e) {
-                setStatus(fixedLatencyStatus, e.message, 'err');
+                setActionError(fixedLatencyStatus, e);
             } finally {
                 applyFixedLatencyBtn.disabled = false;
             }
@@ -774,14 +817,15 @@
 
             try {
                 openBtn.disabled = true;
-                setStatus(playerStatus, 'Opening media...', '');
+                setActionStatus(playerStatus, 'Opening media...', '');
                 const data = await postJson('/api/player/open', { filePath: selectedPath });
+                clearStatusLatch(playerStatus);
                 currentMedia = data.media;
                 renderMetadata(data.media);
                 renderPlayer(data.player);
                 updateStatus();
             } catch (e) {
-                setStatus(playerStatus, e.message, 'err');
+                setActionError(playerStatus, e);
             } finally {
                 openBtn.disabled = false;
             }
@@ -789,18 +833,20 @@
 
         playBtn.onclick = async () => {
             try {
+                clearStatusLatch(playerStatus);
                 const route = currentPlayer && currentPlayer.paused === false ? '/api/player/pause' : '/api/player/play';
                 const data = await postJson(route);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo);
                 updateStatus();
             } catch (e) {
-                setStatus(playerStatus, e.message, 'err');
+                setActionError(playerStatus, e);
             }
         };
 
         playerStopBtn.onclick = async () => {
             try {
+                clearStatusLatch(playerStatus);
                 const data = await postJson('/api/player/stop');
                 currentMedia = null;
                 renderMetadata(null);
@@ -808,7 +854,7 @@
                 renderTvVideo(data.tvVideo);
                 updateStatus();
             } catch (e) {
-                setStatus(playerStatus, e.message, 'err');
+                setActionError(playerStatus, e);
             }
         };
 
@@ -819,9 +865,10 @@
 
         async function seekTo(time) {
             try {
+                clearStatusLatch(playerStatus);
                 const duration = Number(currentPlayer && currentPlayer.duration) || 0;
                 const target = Math.max(0, duration ? Math.min(time, duration) : time);
-                const tvActive = !!(currentTvVideo && currentTvVideo.active);
+                const tvActive = !!(currentTvVideo && currentTvVideo.playbackAvailable);
                 const data = await postJson('/api/player/seek', {
                     time: target,
                     autoPlay: tvActive
@@ -829,7 +876,7 @@
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(playerStatus, e.message, 'err');
+                setActionError(playerStatus, e);
             }
         }
 
@@ -846,34 +893,37 @@
         };
         volumeRange.onchange = async () => {
             try {
+                clearStatusLatch(playerStatus);
                 const data = await postJson('/api/player/volume', { volume: Number(volumeRange.value) });
                 renderPlayer(data.player);
             } catch (e) {
-                setStatus(playerStatus, e.message, 'err');
+                setActionError(playerStatus, e);
             }
         };
 
         syncMirrorAudioBtn.onclick = async () => {
             try {
-                setStatus(mirrorSyncStatus, 'Syncing MPV audio to TV lag...', '');
+                setActionStatus(mirrorSyncStatus, 'Syncing MPV audio to TV lag...', '');
                 const data = await postJson('/api/player/mirror/sync-audio', {
                     trimSeconds: Number(mirrorTrimInput.value) || 0
                 });
+                clearStatusLatch(mirrorSyncStatus);
                 renderPlayer(data.player);
                 renderMirrorSync(data.mirrorSync, data.player);
             } catch (e) {
-                setStatus(mirrorSyncStatus, e.message, 'err');
+                setActionError(mirrorSyncStatus, e);
             }
         };
 
         async function nudgeAudioDelay(deltaSeconds) {
             try {
-                setStatus(mirrorSyncStatus, 'Adjusting MPV audio delay...', '');
+                setActionStatus(mirrorSyncStatus, 'Adjusting MPV audio delay...', '');
                 const data = await postJson('/api/player/audio-delay/nudge', { deltaSeconds });
+                clearStatusLatch(mirrorSyncStatus);
                 renderPlayer(data.player);
                 renderMirrorSync(data.mirrorSync, data.player);
             } catch (e) {
-                setStatus(mirrorSyncStatus, e.message, 'err');
+                setActionError(mirrorSyncStatus, e);
             }
         }
 
@@ -884,80 +934,87 @@
 
         startTvVideoBtn.onclick = async () => {
             try {
-                setStatus(tvVideoStatus, 'Starting TV video stream...', '');
+                setActionStatus(tvVideoStatus, 'Starting TV video stream...', '');
                 const data = await postJson('/api/player/tv/start', {
                     autoPlay: false,
                     delaySeconds: Number(delayRange.value),
                     ...collectStreamOptions()
                 });
+                clearStatusLatch(tvVideoStatus);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         syncPlayBtn.onclick = async () => {
             try {
-                setStatus(tvVideoStatus, 'Prebuffering TV, then starting PC audio...', '');
+                setActionStatus(tvVideoStatus, 'Prebuffering TV, then starting PC audio...', '');
                 const data = await postJson('/api/player/tv/start', {
                     autoPlay: true,
                     delaySeconds: Number(delayRange.value),
                     ...collectStreamOptions()
                 });
+                clearStatusLatch(tvVideoStatus);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         resyncBtn.onclick = async () => {
             try {
-                setStatus(tvVideoStatus, 'Resyncing TV video...', '');
+                setActionStatus(tvVideoStatus, 'Resyncing TV video...', '');
                 const data = await postJson('/api/player/tv/resync');
+                clearStatusLatch(tvVideoStatus);
                 renderPlayer(data.player);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         stopTvVideoBtn.onclick = async () => {
             try {
+                clearStatusLatch(tvVideoStatus);
                 const data = await postJson('/api/player/tv/stop');
                 renderTvVideo(data.tvVideo);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         applyStreamOptionsBtn.onclick = async () => {
             try {
-                setStatus(tvVideoStatus, 'Applying stream options...', '');
+                setActionStatus(tvVideoStatus, 'Applying stream options...', '');
                 const data = await postJson('/api/player/tv/options', collectStreamOptions());
+                clearStatusLatch(tvVideoStatus);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         fitSelect.onchange = async () => {
             try {
+                clearStatusLatch(tvVideoStatus);
                 const data = await postJson('/api/player/tv/fit', { fitMode: fitSelect.value });
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 
         async function nudgeVideo(deltaSeconds) {
             try {
-                setStatus(tvVideoStatus, 'Adjusting video sync...', '');
+                setActionStatus(tvVideoStatus, 'Adjusting video sync...', '');
                 const data = await postJson('/api/player/tv/nudge', { deltaSeconds });
+                clearStatusLatch(tvVideoStatus);
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         }
 
@@ -968,6 +1025,7 @@
 
         autoAudioFollowEnabled.onchange = async () => {
             try {
+                clearStatusLatch(tvVideoStatus);
                 const data = await postJson('/api/player/sync-options', {
                     autoAudioFollowEnabled: autoAudioFollowEnabled.checked
                 });
@@ -975,7 +1033,7 @@
                 renderTvVideo(data.tvVideo, data.tvSyncState, data.sync);
             } catch (e) {
                 autoAudioFollowEnabled.checked = !!(currentSync && currentSync.autoAudioFollowEnabled);
-                setStatus(tvVideoStatus, e.message, 'err');
+                setActionError(tvVideoStatus, e);
             }
         };
 

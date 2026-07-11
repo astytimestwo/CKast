@@ -26,9 +26,9 @@ You have two options to bring your PC broadcast network online:
 ### Option A: The Automated Script (Recommended)
 Simply double click the `start.bat` file located inside this folder.
 This script acts as a smart launcher:
-1. It automatically hunts down any previous "zombie" or frozen server instances that failed to release the TV connection port (8080).
-2. It safely clears the environment.
-3. It boots up the fresh stream server perfectly.
+1. It runs from the folder that contains the script.
+2. It queries Windows for the single process, if any, listening locally on port 8080 and stops only that PID.
+3. It starts a fresh CKast server without terminating unrelated Node processes.
 
 ### Option B: Manual Terminal
 1. Start the server manually via terminal to see debug outputs:
@@ -49,6 +49,11 @@ This mode keeps audio on the PC and sends video-only to the TV.
 5. Click **Synced Play**.
 
 The PC plays audio through MPV. The TV receives video-only FFmpeg fMP4 chunks and sends a lightweight sync-state ping once per second so the PC can keep audio aligned.
+
+File FFmpeg input is paced in real time. For synchronized play and every restart, CKast
+pauses MPV, resets the TV pipeline, and waits for receiver telemetry to prove that the
+requested buffer is ready before resuming. A 30-second readiness timeout is shown in the
+dashboard and does not force playback. MPV is launched audio-only.
 
 Subtitle notes:
 - Embedded subtitle selection and size are supported through FFmpeg burn-in.

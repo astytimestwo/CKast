@@ -113,7 +113,32 @@ function chooseAudioFollowAction(input, options = {}) {
     };
 }
 
+function isFilePlaybackReady(tvState, pending) {
+    if (!tvState || !pending) return false;
+    if (tvState.generation !== pending.generation) return false;
+
+    const fixedLatency = tvState.fixedLatency || {};
+    if (fixedLatency.playbackMode !== 'file') return false;
+    if (Number(tvState.readyState) < 3) return false;
+
+    const bufferAheadSeconds = finiteNumber(fixedLatency.bufferAheadSeconds);
+    const targetBufferSeconds = finiteNumber(pending.targetBufferSeconds);
+    if (bufferAheadSeconds === null || targetBufferSeconds === null) return false;
+    return bufferAheadSeconds >= targetBufferSeconds;
+}
+
+function resolveFileStartTime(requestedStartTime, playerTimeSeconds, manualVideoOffsetSeconds) {
+    const requested = finiteNumber(requestedStartTime);
+    if (requested !== null) return Math.max(0, requested);
+
+    const playerTime = finiteNumber(playerTimeSeconds) || 0;
+    const offset = finiteNumber(manualVideoOffsetSeconds) || 0;
+    return Math.max(0, playerTime + offset);
+}
+
 module.exports = {
     calculateFileSyncState,
-    chooseAudioFollowAction
+    chooseAudioFollowAction,
+    isFilePlaybackReady,
+    resolveFileStartTime
 };

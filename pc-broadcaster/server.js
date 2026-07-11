@@ -2,11 +2,13 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 const path = require('path');
-const { spawn } = require('child_process');
-const Mp4Frag = require('mp4frag');
 const { MpvController, resolveMpvPath } = require('./lib/mpvController');
 const { probeMedia, resolveFfprobePath } = require('./lib/mediaProbe');
 const { FileVideoStreamer, resolveFfmpegPath } = require('./lib/fileVideoStreamer');
+const { DesktopCapture } = require('./lib/desktopCapture');
+const { TvSession } = require('./lib/tvSession');
+const { FilePlaybackCoordinator } = require('./lib/filePlaybackCoordinator');
+const { createShutdown } = require('./lib/shutdown');
 const {
     calculateMirrorLagSeconds,
     calculateAudioDelaySeconds
@@ -17,7 +19,8 @@ const {
 } = require('./lib/fixedLatency');
 const {
     calculateFileSyncState,
-    chooseAudioFollowAction
+    chooseAudioFollowAction,
+    resolveFileStartTime
 } = require('./lib/fileSync');
 
 const app = express();
@@ -25,14 +28,12 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const player = new MpvController();
 const fileVideo = new FileVideoStreamer();
+const desktopCapture = new DesktopCapture();
+const tvSession = new TvSession();
 const AUTO_AUDIO_FOLLOW_WINDOW_MS = 15000;
 
 function freshState() {
     return {
-        tvSocket: null,
-        initSegment: null,
-        ffmpegProcess: null,
-        mp4frag: null,
         tvSyncState: null,
         captureStartedAtMs: null,
         captureTimelineStartedAtMs: null,
@@ -42,8 +43,6 @@ function freshState() {
 }
 
 let S = freshState();
-let streamWatchdog = null;
-let syncResumeTimer = null;
 let syncResyncing = false;
 let lastRateCommandAt = 0;
 let lastPlaybackRate = 1;
@@ -68,25 +67,24 @@ let fixedLatencyOptions = normalizeFixedLatencyOptions({
 let mirrorAudioTrimSeconds = 0;
 let lastFixedLatencyControl = null;
 let lastFixedLatencyControlSentAt = 0;
-const segmentStats = {
-    desktop: createSegmentStats(),
-    file: createSegmentStats()
-};
-
-function createSegmentStats() {
-    return {
-        count: 0,
-        bytes: 0,
-        dropped: 0,
-        droppedBytes: 0,
-        startedAt: Date.now(),
-        lastEventAt: 0,
-        lastBytes: 0
-    };
-}
+const filePlayback = new FilePlaybackCoordinator({
+    player,
+    fileVideo,
+    tvSession,
+    getStreamOptions: () => streamOptions,
+    sendSegment: (chunk) => sendTvSegment(chunk, 'file'),
+    sendControl: sendTvControl,
+    resetTv: resetTvForFilePlayback,
+    resetStats: () => resetSegmentStats('file'),
+    onResume: () => {
+        lastAudioFollowSpeed = 1;
+        lastPlaybackRate = 1;
+        armAutoAudioFollow(0);
+    }
+});
 
 function resetSegmentStats(kind) {
-    segmentStats[kind] = createSegmentStats();
+    tvSession.resetSegmentStats();
 }
 
 function reportError(label, err) {
@@ -112,7 +110,7 @@ function getMirrorSyncState(nowMs = Date.now()) {
         trimSeconds: mirrorAudioTrimSeconds,
         recommendedAudioDelaySeconds,
         currentAudioDelaySeconds: Number.isFinite(playerStatus.audioDelay) ? playerStatus.audioDelay : 0,
-        captureRunning: !!S.ffmpegProcess,
+        captureRunning: desktopCapture.getStatus().active,
         captureStartedAtMs,
         tvBaseTimeSeconds: S.tvCaptureBaseTime,
         tvCurrentTimeSeconds: Number.isFinite(tvSyncState.currentTime) ? tvSyncState.currentTime : null,
@@ -137,6 +135,16 @@ fileVideo.on('start', (event) => {
     resetSegmentStats('file');
 });
 
+desktopCapture.on('initialized', () => {
+    S.captureTimelineStartedAtMs = Date.now();
+    S.tvCaptureBaseTime = null;
+    S.tvCaptureBaseReceivedAt = null;
+});
+
+desktopCapture.on('error', (err) => {
+    reportError('desktop_ffmpeg_error', err);
+});
+
 function asyncRoute(handler) {
     return (req, res) => {
         Promise.resolve(handler(req, res)).catch((err) => {
@@ -150,38 +158,19 @@ function asyncRoute(handler) {
 }
 
 function isTvConnected() {
-    return !!(S.tvSocket && S.tvSocket.readyState === 1);
+    return tvSession.isConnected();
 }
 
 function sendTvControl(payload) {
-    if (!isTvConnected()) {
-        return false;
-    }
-
-    try {
-        S.tvSocket.send(JSON.stringify(payload));
-        return true;
-    } catch (err) {
-        reportError('tv_control_send_failed', err);
-        return false;
-    }
+    return tvSession.sendControl(payload);
 }
 
 function sendTvSegment(chunk, kind = 'file') {
-    if (isTvConnected()) {
-        try {
-            S.tvSocket.send(chunk);
-        } catch (err) {
-            reportError('tv_segment_send_failed', err);
-        }
-    }
+    return tvSession.sendSegment(chunk, kind);
 }
 
 function clearSyncResume() {
-    if (syncResumeTimer) {
-        clearTimeout(syncResumeTimer);
-        syncResumeTimer = null;
-    }
+    tvSession.clearReadiness();
 }
 
 function armAutoAudioFollow(delaySeconds = 0) {
@@ -200,24 +189,6 @@ function disarmAutoAudioFollow() {
 
 function isAutoAudioFollowArmed(nowMs = Date.now()) {
     return autoAudioFollowEnabled && nowMs <= autoAudioFollowArmedUntilMs;
-}
-
-function scheduleSyncedResume(delaySeconds) {
-    clearSyncResume();
-    const delayMs = Math.max(0, Number(delaySeconds) || 0) * 1000;
-    syncResumeTimer = setTimeout(async () => {
-        syncResumeTimer = null;
-        try {
-            if (player.getStatus().loaded) {
-                await player.setSpeed(1);
-                lastAudioFollowSpeed = 1;
-            }
-            sendTvControl({ type: 'play' });
-            await player.play();
-        } catch (err) {
-            reportError('sync_resume_failed', err);
-        }
-    }, delayMs);
 }
 
 function normalizeStreamOptions(input) {
@@ -352,13 +323,52 @@ function sendFilePlaybackTvControls(reason) {
 }
 
 function resetTvForDesktopCapture() {
-    sendFixedLatencyControl({ force: true, reason: 'desktop_capture_start' });
     sendTvControl({
         type: 'reset',
         mode: 'desktop',
         autoPlay: !fixedLatencyOptions.enabled,
+        generation: tvSession.generation,
         reason: 'desktop_capture_start'
     });
+    sendFixedLatencyControl({ force: true, reason: 'desktop_capture_start' });
+}
+
+function resetTvForFilePlayback(reason) {
+    sendTvControl({
+        type: 'reset',
+        mode: 'file',
+        autoPlay: false,
+        generation: tvSession.generation,
+        reason: reason || 'file_playback'
+    });
+    sendFilePlaybackTvControls(reason || 'file_playback');
+    sendTvControl({ type: 'fit', mode: streamOptions.fitMode });
+}
+
+function clearTvTimingState() {
+    S.tvSyncState = null;
+    S.tvCaptureBaseTime = null;
+    S.tvCaptureBaseReceivedAt = null;
+}
+
+function sendCurrentTvHandshake() {
+    const mode = tvSession.mode;
+    sendTvControl({
+        type: 'reset',
+        mode,
+        autoPlay: false,
+        generation: tvSession.generation,
+        reason: 'tv_connected'
+    });
+
+    if (mode === 'desktop') {
+        sendFixedLatencyControl({ force: true, reason: 'tv_connected' });
+        if (desktopCapture.initSegment) sendTvSegment(desktopCapture.initSegment, 'desktop');
+    } else if (mode === 'file') {
+        sendFilePlaybackTvControls('tv_connected');
+        sendTvControl({ type: 'fit', mode: streamOptions.fitMode });
+        if (fileVideo.initSegment) sendTvSegment(fileVideo.initSegment, 'file');
+    }
 }
 
 async function startTvVideo(options) {
@@ -373,29 +383,22 @@ async function startTvVideo(options) {
 
     const delaySeconds = Number(options && options.delaySeconds) || 5;
     applyStreamOptions(options);
-    const startTime = Math.max(
-        0,
-        Number(options && options.startTime) || (status.timePos + manualVideoOffsetSeconds) || 0
+    const startTime = resolveFileStartTime(
+        options && options.startTime,
+        status.timePos,
+        manualVideoOffsetSeconds
     );
 
     stopCapture();
-    await player.pause();
-    await player.setSpeed(1);
+    clearTvTimingState();
     lastAudioFollowSpeed = 1;
-    sendFilePlaybackTvControls('file_playback_start');
-    sendTvControl({ type: 'reset', mode: 'file' });
-    resetSegmentStats('file');
-
-    fileVideo.start(status.filePath, {
+    await filePlayback.restart({
+        filePath: status.filePath,
         startTime,
-        ...streamOptions,
-        sendSegment: sendTvSegment
+        resume: !!(options && options.autoPlay),
+        targetBufferSeconds: delaySeconds,
+        reason: 'file_playback_start'
     });
-
-    if (options && options.autoPlay) {
-        armAutoAudioFollow(delaySeconds);
-        scheduleSyncedResume(delaySeconds);
-    }
 
     return getPlayerBundle();
 }
@@ -405,19 +408,21 @@ async function seekPlayerAndTv(targetTime, shouldResume) {
     await player.pause();
     await player.setSpeed(1);
     lastAudioFollowSpeed = 1;
-    sendFilePlaybackTvControls('file_seek');
-    sendTvControl({ type: 'pause' });
+    if (tvSession.mode === 'file') {
+        sendFilePlaybackTvControls('file_seek');
+        sendTvControl({ type: 'pause' });
+    }
     const playerStatus = await player.seek(targetTime);
 
-    if (fileVideo.getStatus().active || fileVideo.getStatus().filePath) {
-        sendTvControl({ type: 'reset', mode: 'file' });
-        resetSegmentStats('file');
-        fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
-    }
-
-    if (shouldResume) {
-        armAutoAudioFollow(5);
-        scheduleSyncedResume(5);
+    if (tvSession.mode === 'file' && fileVideo.getStatus().filePath) {
+        await filePlayback.restart({
+            startTime: Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds),
+            resume: shouldResume,
+            targetBufferSeconds: 5,
+            reason: 'file_seek'
+        });
+    } else if (shouldResume) {
+        await player.play();
     }
 
     return getPlayerBundle();
@@ -430,13 +435,16 @@ async function handleTvSyncState(tvState) {
         receivedAt: now
     };
     updateMirrorSyncFromTvSyncState(tvState);
-    if (S.ffmpegProcess && fixedLatencyOptions.enabled) {
+    if (desktopCapture.getStatus().active && fixedLatencyOptions.enabled) {
         sendFixedLatencyControl({ reason: 'sync_state' });
     }
 
+    await filePlayback.resumeIfReady(S.tvSyncState);
+
     const streamStatus = fileVideo.getStatus();
     const playerStatus = player.getStatus();
-    if (!streamStatus.active || !playerStatus.loaded || playerStatus.paused) return;
+    const streamCanSync = streamStatus.playbackAvailable;
+    if (!streamCanSync || !playerStatus.loaded || playerStatus.paused) return;
     if (!Number.isFinite(tvState.currentTime)) return;
 
     const fileSync = calculateFileSyncState({
@@ -494,7 +502,7 @@ async function handleTvSyncState(tvState) {
 }
 
 function updateMirrorSyncFromTvSyncState(tvState) {
-    if (!S.ffmpegProcess || !S.captureTimelineStartedAtMs) return;
+    if (!desktopCapture.getStatus().active || !S.captureTimelineStartedAtMs) return;
     if (!Number.isFinite(tvState.currentTime)) return;
 
     if (!Number.isFinite(S.tvCaptureBaseTime)) {
@@ -514,8 +522,11 @@ function getPlayerBundle() {
         tvVideo: fileVideo.getStatus(),
         tvSyncState: S.tvSyncState,
         sync: {
-            pendingResume: !!syncResumeTimer,
-            targetDelaySeconds: 5,
+            pendingResume: !!tvSession.pendingReadiness,
+            targetDelaySeconds: tvSession.pendingReadiness
+                ? tvSession.pendingReadiness.targetBufferSeconds
+                : 5,
+            readinessTimedOut: filePlayback.getStatus().readinessTimedOut,
             lastPlaybackRate,
             lastAudioFollowSpeed,
             manualVideoOffsetSeconds,
@@ -523,7 +534,8 @@ function getPlayerBundle() {
             autoAudioFollowArmed: isAutoAudioFollowArmed()
         },
         mirrorSync: getMirrorSyncState(),
-        fixedLatency: getFixedLatencyState()
+        fixedLatency: getFixedLatencyState(),
+        tvSession: tvSession.getStatus()
     };
 }
 
@@ -537,17 +549,22 @@ wss.on('connection', (ws, req) => {
         return;
     }
 
-    S.tvSocket = ws;
-
-    sendFixedLatencyControl({ force: true, reason: 'tv_connected' });
-
-    if (S.initSegment) {
-        sendTvSegment(S.initSegment, 'desktop');
+    tvSession.replaceSocket(ws);
+    clearTvTimingState();
+    if (tvSession.mode === 'desktop') {
+        S.captureTimelineStartedAtMs = Date.now();
     }
-
     const fileStatus = fileVideo.getStatus();
-    if (fileStatus.hasInitSegment && fileVideo.initSegment) {
-        sendTvSegment(fileVideo.initSegment, 'file');
+    const playerStatus = player.getStatus();
+    if (tvSession.mode === 'file' && fileStatus.filePath && playerStatus.loaded) {
+        filePlayback.restart({
+            startTime: Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds),
+            resume: playerStatus.paused === false,
+            targetBufferSeconds: 5,
+            reason: 'tv_reconnected'
+        }).catch((err) => reportError('file_reconnect_restart_failed', err));
+    } else {
+        sendCurrentTvHandshake();
     }
 
     ws.on('message', (message, isBinary) => {
@@ -558,7 +575,8 @@ wss.on('connection', (ws, req) => {
         try {
             const payload = JSON.parse(message.toString('utf8'));
             if (payload.type === 'sync_state') {
-                handleTvSyncState(payload).catch((err) => {
+                if (!tvSession.acceptTelemetry(ws, payload)) return;
+                handleTvSyncState(tvSession.telemetry).catch((err) => {
                     reportError('tv_sync_state_handling_failed', err);
                 });
             }
@@ -568,42 +586,32 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', () => {
-        if (S.tvSocket === ws) S.tvSocket = null;
+        tvSession.detachSocket(ws);
     });
 
     ws.on('error', (err) => reportError('tv_socket_error', err));
 });
 
-function stopCapture() {
-    if (S.ffmpegProcess) {
-        S.ffmpegProcess.kill('SIGKILL');
-        S.ffmpegProcess = null;
-    }
-
-    if (S.mp4frag) {
-        S.mp4frag.removeAllListeners();
-        S.mp4frag = null;
-    }
-
-    S.initSegment = null;
+function stopCapture(options = {}) {
+    desktopCapture.stop();
     S.captureStartedAtMs = null;
     S.captureTimelineStartedAtMs = null;
     S.tvCaptureBaseTime = null;
     S.tvCaptureBaseReceivedAt = null;
-}
-
-function resetWatchdog() {
-    if (streamWatchdog) clearTimeout(streamWatchdog);
-
-    streamWatchdog = setTimeout(() => {
-        if (S.ffmpegProcess) {
-            startCapture();
-        }
-    }, 5000);
+    if (options.notifyTv && tvSession.mode === 'desktop') {
+        sendTvControl({ type: 'stop' });
+        tvSession.beginMode('idle');
+        S.tvSyncState = null;
+    }
 }
 
 function startCapture() {
+    clearSyncResume();
+    disarmAutoAudioFollow();
+    fileVideo.stop();
     stopCapture();
+    tvSession.beginMode('desktop');
+    clearTvTimingState();
     resetSegmentStats('desktop');
     S.captureStartedAtMs = Date.now();
     S.captureTimelineStartedAtMs = null;
@@ -611,63 +619,7 @@ function startCapture() {
     S.tvCaptureBaseReceivedAt = null;
     resetTvForDesktopCapture();
 
-    S.mp4frag = new Mp4Frag();
-
-    S.mp4frag.on('initialized', (data) => {
-        S.initSegment = data.initialization;
-        S.captureTimelineStartedAtMs = Date.now();
-        S.tvCaptureBaseTime = null;
-        S.tvCaptureBaseReceivedAt = null;
-
-        sendTvSegment(S.initSegment, 'desktop');
-
-        resetWatchdog();
-    });
-
-    S.mp4frag.on('segment', (data) => {
-        sendTvSegment(data.segment, 'desktop');
-
-        resetWatchdog();
-    });
-
-    const ffmpegArgs = [
-        '-probesize', '42M',
-        '-analyzeduration', '0',
-        '-rtbufsize', '1024M',
-        '-thread_queue_size', '512',
-        '-f', 'lavfi',
-        '-i', 'ddagrab=framerate=60',
-        '-vf', 'hwdownload,format=bgra',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
-        '-sc_threshold', '0',
-        '-g', '15',
-        '-keyint_min', '15',
-        '-pix_fmt', 'yuv420p',
-        '-b:v', '20000k',
-        '-maxrate', '20000k',
-        '-bufsize', '20000k',
-        '-f', 'mp4',
-        '-movflags', '+frag_keyframe+empty_moov+default_base_moof',
-        'pipe:1'
-    ];
-
-    S.ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
-    S.ffmpegProcess.stdout.pipe(S.mp4frag);
-
-    S.ffmpegProcess.stderr.on('data', (chunk) => {
-        // Drain stderr so FFmpeg cannot block on a full pipe.
-        chunk.length;
-    });
-
-    S.ffmpegProcess.on('error', (err) => {
-        reportError('desktop_ffmpeg_error', err);
-    });
-
-    S.ffmpegProcess.on('close', () => {
-        if (streamWatchdog) clearTimeout(streamWatchdog);
-    });
+    desktopCapture.start((chunk) => sendTvSegment(chunk, 'desktop'));
 }
 
 app.post('/start', (req, res) => {
@@ -676,7 +628,7 @@ app.post('/start', (req, res) => {
 });
 
 app.post('/stop', (req, res) => {
-    stopCapture();
+    stopCapture({ notifyTv: true });
     res.json({ success: true, message: 'Capture stopped' });
 });
 
@@ -693,6 +645,10 @@ app.post('/api/fixed-latency', asyncRoute(async (req, res) => {
 app.post('/api/player/open', asyncRoute(async (req, res) => {
     const filePath = req.body && req.body.filePath;
     const media = await probeMedia(filePath);
+    if (tvSession.mode === 'file') {
+        await filePlayback.stop('open_new_file');
+        S.tvSyncState = null;
+    }
     const status = await player.open(media.filePath);
 
     res.json({
@@ -703,10 +659,10 @@ app.post('/api/player/open', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/player/play', asyncRoute(async (req, res) => {
-    if (fileVideo.getStatus().active) {
+    if (tvSession.mode === 'file' && fileVideo.getStatus().playbackAvailable) {
         sendFilePlaybackTvControls('file_player_play');
+        sendTvControl({ type: 'play' });
     }
-    sendTvControl({ type: 'play' });
     const status = await player.play();
     res.json({ success: true, player: status, tvVideo: fileVideo.getStatus() });
 }));
@@ -714,7 +670,7 @@ app.post('/api/player/play', asyncRoute(async (req, res) => {
 app.post('/api/player/pause', asyncRoute(async (req, res) => {
     clearSyncResume();
     disarmAutoAudioFollow();
-    sendTvControl({ type: 'pause' });
+    if (tvSession.mode === 'file') sendTvControl({ type: 'pause' });
     if (player.getStatus().loaded) {
         await player.setSpeed(1);
         lastAudioFollowSpeed = 1;
@@ -777,8 +733,12 @@ app.post('/api/player/mirror/sync-audio', asyncRoute(async (req, res) => {
 app.post('/api/player/stop', asyncRoute(async (req, res) => {
     clearSyncResume();
     disarmAutoAudioFollow();
-    sendTvControl({ type: 'stop' });
-    fileVideo.stop();
+    if (tvSession.mode === 'file') {
+        await filePlayback.stop('player_stop');
+        S.tvSyncState = null;
+    } else {
+        fileVideo.stop();
+    }
     const status = await player.stop();
     res.json({ success: true, player: status, tvVideo: fileVideo.getStatus() });
 }));
@@ -796,8 +756,13 @@ app.post('/api/player/tv/start', asyncRoute(async (req, res) => {
 app.post('/api/player/tv/stop', asyncRoute(async (req, res) => {
     clearSyncResume();
     disarmAutoAudioFollow();
-    sendTvControl({ type: 'stop' });
-    const tvVideo = fileVideo.stop();
+    if (tvSession.mode === 'file') {
+        await filePlayback.stop('tv_video_stop');
+        S.tvSyncState = null;
+    } else {
+        fileVideo.stop();
+    }
+    const tvVideo = fileVideo.getStatus();
     res.json({ success: true, tvVideo, player: player.getStatus() });
 }));
 
@@ -812,17 +777,15 @@ app.post('/api/player/tv/options', asyncRoute(async (req, res) => {
 
     const tvStatus = fileVideo.getStatus();
     const playerStatus = await player.refreshCoreProperties();
-    if (tvStatus.active && playerStatus.loaded) {
+    if (tvSession.mode === 'file' && tvStatus.playbackAvailable && playerStatus.loaded) {
         await player.setSpeed(1);
         lastAudioFollowSpeed = 1;
-        sendFilePlaybackTvControls('file_options_restart');
-        sendTvControl({ type: 'reset', mode: 'file' });
-        resetSegmentStats('file');
-        fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
-        if (playerStatus.paused === false) {
-            armAutoAudioFollow(5);
-            scheduleSyncedResume(5);
-        }
+        await filePlayback.restart({
+            startTime: Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds),
+            resume: playerStatus.paused === false,
+            targetBufferSeconds: 5,
+            reason: 'file_options_restart'
+        });
     }
 
     res.json({ success: true, ...getPlayerBundle(), streamOptions });
@@ -839,17 +802,15 @@ app.post('/api/player/tv/nudge', asyncRoute(async (req, res) => {
 
     const tvStatus = fileVideo.getStatus();
     const playerStatus = await player.refreshCoreProperties();
-    if (tvStatus.active && playerStatus.loaded) {
+    if (tvSession.mode === 'file' && tvStatus.playbackAvailable && playerStatus.loaded) {
         await player.setSpeed(1);
         lastAudioFollowSpeed = 1;
-        sendFilePlaybackTvControls('file_nudge_restart');
-        sendTvControl({ type: 'reset', mode: 'file' });
-        resetSegmentStats('file');
-        fileVideo.restartAt(Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds), streamOptions);
-        if (playerStatus.paused === false) {
-            armAutoAudioFollow(5);
-            scheduleSyncedResume(5);
-        }
+        await filePlayback.restart({
+            startTime: Math.max(0, playerStatus.timePos + manualVideoOffsetSeconds),
+            resume: playerStatus.paused === false,
+            targetBufferSeconds: 5,
+            reason: 'file_nudge_restart'
+        });
     }
 
     res.json({ success: true, ...getPlayerBundle(), streamOptions });
@@ -878,8 +839,11 @@ app.get('/api/player/status', asyncRoute(async (req, res) => {
         tvVideo: fileVideo.getStatus(),
         tvSyncState: S.tvSyncState,
         sync: {
-            pendingResume: !!syncResumeTimer,
-            targetDelaySeconds: 5,
+            pendingResume: !!tvSession.pendingReadiness,
+            targetDelaySeconds: tvSession.pendingReadiness
+                ? tvSession.pendingReadiness.targetBufferSeconds
+                : 5,
+            readinessTimedOut: filePlayback.getStatus().readinessTimedOut,
             lastPlaybackRate,
             lastAudioFollowSpeed,
             manualVideoOffsetSeconds,
@@ -889,6 +853,7 @@ app.get('/api/player/status', asyncRoute(async (req, res) => {
         mirrorSync: getMirrorSyncState(),
         fixedLatency: getFixedLatencyState(),
         streamOptions,
+        tvSession: tvSession.getStatus(),
         dependencies: {
             mpv: resolveMpvPath(),
             ffprobe: resolveFfprobePath(),
@@ -899,16 +864,20 @@ app.get('/api/player/status', asyncRoute(async (req, res) => {
 
 app.get('/status', (req, res) => {
     res.json({
-        running: !!S.ffmpegProcess,
-        tvConnected: !!S.tvSocket,
+        running: desktopCapture.getStatus().active,
+        tvConnected: tvSession.isConnected(),
         player: player.getStatus(),
         tvVideo: fileVideo.getStatus(),
         tvSyncState: S.tvSyncState,
         mirrorSync: getMirrorSyncState(),
         fixedLatency: getFixedLatencyState(),
+        tvSession: tvSession.getStatus(),
         sync: {
-            pendingResume: !!syncResumeTimer,
-            targetDelaySeconds: 5,
+            pendingResume: !!tvSession.pendingReadiness,
+            targetDelaySeconds: tvSession.pendingReadiness
+                ? tvSession.pendingReadiness.targetBufferSeconds
+                : 5,
+            readinessTimedOut: filePlayback.getStatus().readinessTimedOut,
             lastPlaybackRate,
             lastAudioFollowSpeed,
             manualVideoOffsetSeconds,
@@ -919,6 +888,32 @@ app.get('/status', (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
+const shutdown = createShutdown({
+    desktopCapture,
+    fileVideo,
+    player,
+    tvSession,
+    httpServer: server
+});
+
+function handleShutdownSignal(signal) {
+    shutdown(signal)
+        .then(() => process.exit(0))
+        .catch((err) => {
+            reportError('shutdown_failed', err);
+            process.exit(1);
+        });
+}
+
+process.once('SIGINT', () => handleShutdownSignal('SIGINT'));
+process.once('SIGTERM', () => handleShutdownSignal('SIGTERM'));
+
+server.once('error', (err) => {
+    reportError('server_error', err);
+    shutdown('server_error').catch((shutdownError) => {
+        reportError('shutdown_after_server_error_failed', shutdownError);
+    });
+});
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`\nCKast Server running on http://0.0.0.0:${PORT}`);

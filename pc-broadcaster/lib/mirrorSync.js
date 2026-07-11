@@ -13,8 +13,6 @@ function calculateMirrorLagSeconds(input) {
         input.captureStartedAtMs === undefined ||
         input.nowMs === null ||
         input.nowMs === undefined ||
-        input.tvBaseTimeSeconds === null ||
-        input.tvBaseTimeSeconds === undefined ||
         input.tvCurrentTimeSeconds === null ||
         input.tvCurrentTimeSeconds === undefined
     ) {
@@ -23,13 +21,11 @@ function calculateMirrorLagSeconds(input) {
 
     const captureStartedAtMs = Number(input && input.captureStartedAtMs);
     const nowMs = Number(input && input.nowMs);
-    const tvBaseTimeSeconds = Number(input && input.tvBaseTimeSeconds);
     const tvCurrentTimeSeconds = Number(input && input.tvCurrentTimeSeconds);
 
     if (
         !Number.isFinite(captureStartedAtMs) ||
         !Number.isFinite(nowMs) ||
-        !Number.isFinite(tvBaseTimeSeconds) ||
         !Number.isFinite(tvCurrentTimeSeconds) ||
         nowMs < captureStartedAtMs
     ) {
@@ -37,8 +33,7 @@ function calculateMirrorLagSeconds(input) {
     }
 
     const captureElapsedSeconds = (nowMs - captureStartedAtMs) / 1000;
-    const tvElapsedSeconds = tvCurrentTimeSeconds - tvBaseTimeSeconds;
-    return roundSeconds(Math.max(0, captureElapsedSeconds - tvElapsedSeconds));
+    return roundSeconds(Math.max(0, captureElapsedSeconds - tvCurrentTimeSeconds));
 }
 
 function calculateAudioDelaySeconds(lagSeconds, trimSeconds) {

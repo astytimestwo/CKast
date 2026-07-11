@@ -74,6 +74,21 @@ test('falls back to requested total lag before live measurements exist', () => {
     assert.equal(control.liveEdgeLagSeconds, null);
 });
 
+test('missing fixed-latency measurements are not coerced to zero', () => {
+    const control = calculateFixedLatencyControl({
+        options: {
+            enabled: true,
+            targetSeconds: 2.5
+        },
+        actualLagSeconds: 3,
+        bufferAheadSeconds: null
+    });
+
+    assert.equal(control.liveEdgeLagSeconds, null);
+    assert.equal(control.bufferAheadSeconds, null);
+    assert.equal(control.targetSeconds, 2.5);
+});
+
 test('keeps a small buffer when natural lag already exceeds target', () => {
     const control = calculateFixedLatencyControl({
         options: {

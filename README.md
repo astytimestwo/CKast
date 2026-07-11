@@ -154,6 +154,10 @@ For synced local-player mode:
 5. Choose quality, fit, and subtitle options.
 6. Click **Synced Play**.
 
+File video is paced in real time. MPV stays paused until the TV reports that its requested
+buffer target is ready; if readiness is not reached within 30 seconds, the dashboard reports
+the timeout instead of starting audio out of sync.
+
 ## Common Fixes
 
 - **TV app does not connect:** confirm PC and TV are on the same network, enter the PC IPv4 address in the TV app's **PC address** field, and keep the TV Developer Mode Host PC IP set to the PC IP.

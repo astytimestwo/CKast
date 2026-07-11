@@ -41,6 +41,9 @@ function parseSrtTime(value) {
 }
 
 function createShiftedSrt(sourcePath, delaySeconds) {
+    if (!fs.existsSync(sourcePath)) {
+        throw new Error('Subtitle file not found: ' + sourcePath);
+    }
     const ext = path.extname(sourcePath).toLowerCase();
     if (ext !== '.srt' || !Number.isFinite(delaySeconds) || delaySeconds === 0) {
         return { filePath: sourcePath, temporary: false };
@@ -66,7 +69,7 @@ function createShiftedSrt(sourcePath, delaySeconds) {
     return { filePath: target, temporary: true };
 }
 
-function buildSubtitleFilter(options) {
+function buildSubtitleFilter(options, startTime = 0) {
     if (!options || options.subtitlesEnabled === false) return { filter: null, tempPath: null };
 
     const scale = Number(options.subtitleScale);
@@ -82,9 +85,6 @@ function buildSubtitleFilter(options) {
 
     if (options.externalSubtitlePath) {
         const subtitle = createShiftedSrt(path.resolve(options.externalSubtitlePath), delay);
-        if (!fs.existsSync(subtitle.filePath)) {
-            throw new Error('Subtitle file not found: ' + subtitle.filePath);
-        }
         if (subtitle.temporary) tempPath = subtitle.filePath;
         subtitleFilter = "subtitles='" + escapeFilterPath(subtitle.filePath) + "'";
     } else if (Number.isInteger(options.subtitleStreamIndex) && options.subtitleStreamIndex >= 0) {
@@ -95,6 +95,12 @@ function buildSubtitleFilter(options) {
 
     if (forceStyleParts.length > 0) {
         subtitleFilter += ":force_style='" + forceStyleParts.join(',') + "'";
+    }
+
+    const absoluteStartTime = Math.max(0, Number(startTime) || 0);
+    if (absoluteStartTime > 0) {
+        subtitleFilter = 'setpts=PTS+' + absoluteStartTime + '/TB,' +
+            subtitleFilter + ',setpts=PTS-STARTPTS';
     }
 
     return { filter: subtitleFilter, tempPath };
@@ -126,6 +132,7 @@ class FileVideoStreamer extends EventEmitter {
     getStatus() {
         return {
             active: !!this.ffmpegProcess,
+            playbackAvailable: !!this.filePath && ['starting', 'streaming', 'ended'].includes(this.mode),
             mode: this.mode,
             filePath: this.filePath,
             ffmpegPid: this.ffmpegProcess ? this.ffmpegProcess.pid : null,
@@ -193,7 +200,15 @@ class FileVideoStreamer extends EventEmitter {
         });
 
         this.cleanupSubtitleTemp();
-        const subtitle = buildSubtitleFilter(this.options);
+        let subtitle;
+        try {
+            subtitle = buildSubtitleFilter(this.options, startTime);
+        } catch (err) {
+            this.filePath = null;
+            this.mode = 'error';
+            this.error = err.message;
+            throw err;
+        }
         this.subtitleTempPath = subtitle.tempPath;
         const videoFilters = [];
         if (subtitle.filter) videoFilters.push(subtitle.filter);
@@ -202,6 +217,7 @@ class FileVideoStreamer extends EventEmitter {
             '-hide_banner',
             '-loglevel', 'warning',
             '-ss', String(startTime),
+            '-re',
             '-i', normalizedPath,
             '-an',
             '-map', '0:v:0',
@@ -332,6 +348,7 @@ class FileVideoStreamer extends EventEmitter {
 }
 
 module.exports = {
+    buildSubtitleFilter,
     FileVideoStreamer,
     resolveFfmpegPath
 };

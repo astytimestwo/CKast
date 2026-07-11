@@ -7,6 +7,8 @@
     var DEFAULT_SERVER_IP = '10.204.247.239';
     var SERVER_IP_STORAGE_KEY = 'ckast-server-ip';
     var SERVER_PORT = 8080;
+    var MAX_QUEUE_SEGMENTS = 32;
+    var BUFFER_HISTORY_SECONDS = 10;
 
     var video = document.getElementById('screenVideo');
     var overlay = document.getElementById('connectOverlay');
@@ -20,6 +22,7 @@
     var sourceBuffer = null;
     var objectUrl = null;
     var queue = [];
+    var pipelineGeneration = 0;
     var hasPlayed = false;
     var shouldAutoPlay = true;
     var playbackMode = 'idle';
@@ -150,31 +153,38 @@
 
     function createMediaPipeline(autoPlay, message, mode) {
         clearMediaPipeline(message || 'Preparing stream...');
+        var generation = pipelineGeneration;
         playbackMode = mode || 'file';
         shouldAutoPlay = !!autoPlay && !fixedLatency.enabled;
         hasPlayed = false;
         resetFixedLatencySession('pipeline_reset');
 
-        mediaSource = new MediaSource();
-        objectUrl = URL.createObjectURL(mediaSource);
+        var nextMediaSource = new MediaSource();
+        mediaSource = nextMediaSource;
+        objectUrl = URL.createObjectURL(nextMediaSource);
         video.removeAttribute('src');
         video.src = objectUrl;
         video.load();
 
-        mediaSource.addEventListener('sourceopen', function () {
+        nextMediaSource.addEventListener('sourceopen', function () {
+            if (generation !== pipelineGeneration || mediaSource !== nextMediaSource) return;
+            var nextSourceBuffer;
             try {
-                sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
-                sourceBuffer.mode = 'sequence';
+                nextSourceBuffer = nextMediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+                sourceBuffer = nextSourceBuffer;
+                nextSourceBuffer.mode = 'sequence';
             } catch (e) {
                 setConnectStatus('ERROR: ' + e.message);
                 return;
             }
 
-            sourceBuffer.addEventListener('updateend', function () {
+            nextSourceBuffer.addEventListener('updateend', function () {
+                if (generation !== pipelineGeneration || sourceBuffer !== nextSourceBuffer) return;
                 processQueue();
                 runFixedLatencyController();
             });
-            sourceBuffer.addEventListener('error', function () {
+            nextSourceBuffer.addEventListener('error', function () {
+                if (generation !== pipelineGeneration || sourceBuffer !== nextSourceBuffer) return;
                 console.error('[SourceBuffer] error event');
             });
 
@@ -183,6 +193,7 @@
     }
 
     function clearMediaPipeline(message) {
+        pipelineGeneration += 1;
         queue = [];
         hasPlayed = false;
         shouldAutoPlay = false;
@@ -252,6 +263,11 @@
                 return;
             }
 
+            if (queue.length >= MAX_QUEUE_SEGMENTS) {
+                setConnectStatus('Receiver queue overloaded - reconnecting...');
+                try { ws.close(1013, 'Receiver media queue overflow'); } catch (e) { }
+                return;
+            }
             queue.push(event.data);
             processQueue();
             runFixedLatencyController();
@@ -297,6 +313,7 @@
                 playVideo();
             }
         } else if (msg.type === 'pause') {
+            shouldAutoPlay = false;
             video.pause();
         } else if (msg.type === 'setPlaybackRate') {
             var rate = Number(msg.rate);
@@ -500,32 +517,36 @@
         var bufferedEnd = getBufferedEnd();
         var bufferAhead = Math.max(0, bufferedEnd - (Number(video.currentTime) || 0));
 
-        ws.send(JSON.stringify({
-            type: 'sync_state',
-            currentTime: video.currentTime || 0,
-            bufferedEnd: bufferedEnd,
-            paused: video.paused,
-            playbackRate: video.playbackRate || 1,
-            queueLength: queue.length,
-            readyState: video.readyState,
-            fixedLatency: {
-                enabled: fixedLatency.enabled,
-                playbackMode: playbackMode,
-                targetSeconds: fixedLatency.targetSeconds,
-                minBufferSeconds: fixedLatency.minBufferSeconds,
-                started: fixedLatency.started,
-                bufferAheadSeconds: roundSeconds(bufferAhead),
-                lastAction: fixedLatency.lastAction,
-                lastActionAt: fixedLatency.lastActionAt
-            }
-        }));
+        try {
+            ws.send(JSON.stringify({
+                type: 'sync_state',
+                currentTime: video.currentTime || 0,
+                bufferedEnd: bufferedEnd,
+                paused: video.paused,
+                playbackRate: video.playbackRate || 1,
+                queueLength: queue.length,
+                readyState: video.readyState,
+                fixedLatency: {
+                    enabled: fixedLatency.enabled,
+                    playbackMode: playbackMode,
+                    targetSeconds: fixedLatency.targetSeconds,
+                    minBufferSeconds: fixedLatency.minBufferSeconds,
+                    started: fixedLatency.started,
+                    bufferAheadSeconds: roundSeconds(bufferAhead),
+                    lastAction: fixedLatency.lastAction,
+                    lastActionAt: fixedLatency.lastActionAt
+                }
+            }));
+        } catch (e) {
+            // Connection teardown races are recovered by the reconnect loop.
+        }
     }
 
     function evictBuffer() {
         if (!sourceBuffer || sourceBuffer.updating) return;
         if (!video || !video.currentTime) return;
 
-        var removeEnd = video.currentTime - 60;
+        var removeEnd = video.currentTime - BUFFER_HISTORY_SECONDS;
         if (removeEnd <= 0) return;
 
         try {
