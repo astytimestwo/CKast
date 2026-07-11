@@ -50,14 +50,10 @@ graph TD
 
 Follow these steps to deploy and build the setup.
 
-### Step 1: Configure the TV Receiver Target
-Locate the TV application entry point at `tv-app/js/main.js` and set the target broadcast IP to match your developer PC:
+### Step 1: Prepare the TV Receiver Target
+The packaged TV receiver includes a **PC address** field on the standby screen. The first launch uses the bundled default only as a fallback; after that, the address entered on the TV is saved in Tizen `localStorage` under `ckast-server-ip`.
 
-```javascript
-// tv-app/js/main.js
-var SERVER_IP = '192.168.1.6'; // Replace with your PC's IPv4 address
-var SERVER_PORT = 8080;
-```
+When the developer PC gets a new IPv4 address, edit the **PC address** field on the TV and press **Connect**. A rebuild is not required for IP changes.
 
 ### Step 2: Build and Package the Tizen Widget
 Recommended VS Code workflow:

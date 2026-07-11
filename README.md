@@ -53,7 +53,7 @@ tv-app/
 
 The extension expects the Tizen project root to contain `config.xml`, so do not build from the repository root.
 
-### 3. Set Your PC IP In The TV App
+### 3. Know Your PC IP
 
 Find your PC IPv4 address on the same Wi-Fi/LAN as the TV:
 
@@ -61,13 +61,7 @@ Find your PC IPv4 address on the same Wi-Fi/LAN as the TV:
 ipconfig
 ```
 
-Edit `tv-app/js/main.js`:
-
-```js
-var SERVER_IP = '192.168.x.x';
-```
-
-Use the PC IPv4 address, not the TV IP.
+You do not need to rebuild the TV app when this address changes. The TV receiver has a **PC address** field on its standby screen. Enter the PC IPv4 address there and press **Connect**; the TV saves it for the next launch.
 
 ### 4. Enable Developer Mode On The TV
 
@@ -128,6 +122,7 @@ Tizen TV: Launch Application
 ```
 
 The TV app should open to the CKast standby screen, then connect to the PC server once the server is running.
+If the PC IP changed, edit the **PC address** field on the TV and press **Connect**.
 
 ## PC Broadcaster Setup
 
@@ -161,10 +156,10 @@ For synced local-player mode:
 
 ## Common Fixes
 
-- **TV app does not connect:** confirm PC and TV are on the same network, `SERVER_IP` is the PC IP, and the TV Developer Mode Host PC IP is also the PC IP.
+- **TV app does not connect:** confirm PC and TV are on the same network, enter the PC IPv4 address in the TV app's **PC address** field, and keep the TV Developer Mode Host PC IP set to the PC IP.
 - **VS Code cannot launch:** confirm the VS Code target/device address is the TV IP, not the PC IP.
 - **Build signed package fails:** check Certificate Manager and set an active certificate profile.
-- **App installs but old behavior remains:** uninstall/relaunch from VS Code, or rebuild after editing `tv-app/js/main.js`.
+- **App installs but old behavior remains:** uninstall/relaunch from VS Code, then rebuild and launch the signed package again.
 - **MPV missing:** download MPV separately and set `MPV_PATH`, or place it in one of the supported local paths above.
 
 ## Git Notes

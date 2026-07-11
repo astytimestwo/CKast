@@ -4,14 +4,18 @@
 (function () {
     'use strict';
 
-    // Change this to your PC's current local IP address.
-    var SERVER_IP = '10.204.247.239';
+    var DEFAULT_SERVER_IP = '10.204.247.239';
+    var SERVER_IP_STORAGE_KEY = 'ckast-server-ip';
     var SERVER_PORT = 8080;
 
     var video = document.getElementById('screenVideo');
     var overlay = document.getElementById('connectOverlay');
+    var serverForm = document.getElementById('serverForm');
+    var serverIpInput = document.getElementById('serverIpInput');
+    var connectButton = document.getElementById('connectButton');
 
     var ws = null;
+    var activeConnectionId = 0;
     var mediaSource = null;
     var sourceBuffer = null;
     var objectUrl = null;
@@ -69,13 +73,79 @@
         if (el) el.textContent = msg;
     }
 
-    startConnection(SERVER_IP);
+    function normalizeServerIp(ip) {
+        return String(ip || '').trim();
+    }
+
+    function getSavedServerIp() {
+        try {
+            return normalizeServerIp(localStorage.getItem(SERVER_IP_STORAGE_KEY));
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function saveServerIp(ip) {
+        try {
+            localStorage.setItem(SERVER_IP_STORAGE_KEY, ip);
+        } catch (e) { }
+    }
+
+    function setServerIpInput(ip) {
+        if (serverIpInput && document.activeElement !== serverIpInput) {
+            serverIpInput.value = ip;
+        }
+    }
+
+    function connectFromForm() {
+        var ip = normalizeServerIp(serverIpInput && serverIpInput.value);
+        if (!ip) {
+            setConnectStatus('Enter your PC address first.');
+            if (serverIpInput) serverIpInput.focus();
+            return false;
+        }
+
+        saveServerIp(ip);
+        startConnection(ip);
+        return false;
+    }
+
+    function initializeConnectionForm() {
+        var initialIp = getSavedServerIp() || DEFAULT_SERVER_IP;
+        setServerIpInput(initialIp);
+
+        if (serverForm) {
+            serverForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                connectFromForm();
+            });
+        }
+
+        if (connectButton) {
+            try { connectButton.focus(); } catch (e) { }
+        }
+
+        if (initialIp) {
+            startConnection(initialIp);
+        }
+    }
+
+    initializeConnectionForm();
 
     function startConnection(ip) {
+        ip = normalizeServerIp(ip);
+        if (!ip) {
+            setConnectStatus('Enter your PC address first.');
+            return;
+        }
+
+        activeConnectionId += 1;
+        var connectionId = activeConnectionId;
         cleanup();
+        setServerIpInput(ip);
         setConnectStatus('Connecting to ' + ip + '...');
         createMediaPipeline(true, 'Connecting to ' + ip + '...', 'idle');
-        connectWebSocket(ip);
+        connectWebSocket(ip, connectionId);
     }
 
     function createMediaPipeline(autoPlay, message, mode) {
@@ -152,20 +222,21 @@
         );
     }
 
-    function connectWebSocket(ip) {
+    function connectWebSocket(ip, connectionId) {
         var url = 'ws://' + ip + ':' + SERVER_PORT + '/tv';
 
         try {
             ws = new WebSocket(url);
         } catch (e) {
-            scheduleReconnect(ip);
+            scheduleReconnect(ip, connectionId);
             return;
         }
 
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = function () {
-            setConnectStatus('Connected - waiting for stream...');
+            if (connectionId !== activeConnectionId) return;
+            setConnectStatus('Connected to ' + ip + ' - waiting for stream...');
             if (evictTimer) clearInterval(evictTimer);
             if (syncStateTimer) clearInterval(syncStateTimer);
             if (fixedLatencyTimer) clearInterval(fixedLatencyTimer);
@@ -175,6 +246,7 @@
         };
 
         ws.onmessage = function (event) {
+            if (connectionId !== activeConnectionId) return;
             if (typeof event.data === 'string') {
                 handleControlMessage(event.data);
                 return;
@@ -190,13 +262,15 @@
         };
 
         ws.onclose = function () {
+            if (connectionId !== activeConnectionId) return;
             overlay.classList.remove('hidden');
-            setConnectStatus('Reconnecting...');
-            scheduleReconnect(ip);
+            setConnectStatus('Disconnected from ' + ip + ' - retrying...');
+            scheduleReconnect(ip, connectionId);
         };
 
         ws.onerror = function () {
-            setConnectStatus('Connection failed - retrying...');
+            if (connectionId !== activeConnectionId) return;
+            setConnectStatus('Connection failed - check the PC address.');
         };
     }
 
@@ -464,9 +538,10 @@
         } catch (e) { }
     }
 
-    function scheduleReconnect(ip) {
+    function scheduleReconnect(ip, connectionId) {
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(function () {
+            if (connectionId !== activeConnectionId) return;
             startConnection(ip);
         }, 3000);
     }
