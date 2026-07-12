@@ -4,11 +4,15 @@
 (function () {
     'use strict';
 
-    var DEFAULT_SERVER_IP = '192.168.1.10';
+    var DEFAULT_SERVER_IP = '10.70.192.239';
     var SERVER_IP_STORAGE_KEY = 'ckast-server-ip';
     var SERVER_PORT = 8080;
     var MAX_QUEUE_SEGMENTS = 32;
     var BUFFER_HISTORY_SECONDS = 10;
+    var KEY_LEFT = 37;
+    var KEY_UP = 38;
+    var IME_DONE = 65376;
+    var IME_CANCEL = 65385;
 
     var video = document.getElementById('screenVideo');
     var overlay = document.getElementById('connectOverlay');
@@ -113,6 +117,25 @@
         return false;
     }
 
+    function initializeRemoteInput() {
+        if (!document.body) return;
+
+        document.body.addEventListener('keydown', function (event) {
+            var focused = document.activeElement;
+
+            if (focused === connectButton && (event.keyCode === KEY_LEFT || event.keyCode === KEY_UP)) {
+                if (serverIpInput) serverIpInput.focus();
+                event.preventDefault();
+                return;
+            }
+
+            if (focused === serverIpInput && (event.keyCode === IME_DONE || event.keyCode === IME_CANCEL)) {
+                serverIpInput.blur();
+                if (connectButton) connectButton.focus();
+            }
+        });
+    }
+
     function initializeConnectionForm() {
         var initialIp = getSavedServerIp() || DEFAULT_SERVER_IP;
         setServerIpInput(initialIp);
@@ -124,8 +147,10 @@
             });
         }
 
-        if (connectButton) {
-            try { connectButton.focus(); } catch (e) { }
+        initializeRemoteInput();
+
+        if (serverIpInput) {
+            try { serverIpInput.focus(); } catch (e) { }
         }
 
         if (initialIp) {

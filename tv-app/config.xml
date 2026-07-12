@@ -13,6 +13,7 @@
     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
     <icon src="icon.png"/>
     <content src="index.html"/>
+    <tizen:metadata key="http://samsung.com/tv/metadata/use.keypad.without.useraction" value="false"/>
     
     <tizen:setting 
         screen-orientation="landscape" 

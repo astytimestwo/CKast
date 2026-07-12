@@ -6,6 +6,8 @@ function createTvRuntime() {
     const intervals = [];
     const mediaSources = [];
     const sockets = [];
+    const bodyListeners = {};
+    let activeElement = null;
     const classList = {
         add() {},
         remove() {},
@@ -39,13 +41,24 @@ function createTvRuntime() {
         }
     };
 
+    const formListeners = {};
     const elements = {
         screenVideo: video,
         connectOverlay: { classList },
-        serverForm: { addEventListener() {} },
-        serverIpInput: { value: '', focus() {} },
-        connectButton: { focus() {} },
+        serverForm: {
+            addEventListener(name, listener) { formListeners[name] = listener; }
+        },
+        serverIpInput: { value: '' },
+        connectButton: {},
         connectStatusText: { textContent: '' }
+    };
+    elements.serverIpInput.focus = function () { activeElement = this; };
+    elements.serverIpInput.blur = function () {
+        if (activeElement === this) activeElement = null;
+    };
+    elements.connectButton.focus = function () { activeElement = this; };
+    elements.connectButton.blur = function () {
+        if (activeElement === this) activeElement = null;
     };
 
     class FakeSourceBuffer {
@@ -132,7 +145,10 @@ function createTvRuntime() {
         Promise,
         String,
         document: {
-            activeElement: null,
+            get activeElement() { return activeElement; },
+            body: {
+                addEventListener(name, listener) { bodyListeners[name] = listener; }
+            },
             getElementById(id) { return elements[id]; }
         },
         localStorage: {
@@ -167,6 +183,22 @@ function createTvRuntime() {
         get pauseCalls() { return pauseCalls; },
         get socket() { return sockets[sockets.length - 1]; },
         get currentMediaSource() { return mediaSources[mediaSources.length - 1]; },
+        get activeElement() { return activeElement; },
+        keyDown(keyCode) {
+            let defaultPrevented = false;
+            if (bodyListeners.keydown) {
+                bodyListeners.keydown({
+                    keyCode,
+                    preventDefault() { defaultPrevented = true; }
+                });
+            }
+            return { defaultPrevented };
+        },
+        submitAddressForm() {
+            if (formListeners.submit) {
+                formListeners.submit({ preventDefault() {} });
+            }
+        },
         sendControl(payload) {
             this.socket.onmessage({ data: JSON.stringify(payload) });
         },

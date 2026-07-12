@@ -72,3 +72,18 @@ test('sync telemetry tolerates a socket closing during send', () => {
 
     assert.doesNotThrow(() => app.intervals[1]());
 });
+
+test('TV remote focuses the address input and handles IME completion', () => {
+    const app = createTvRuntime();
+
+    assert.equal(app.activeElement, app.elements.serverIpInput);
+
+    app.elements.connectButton.focus();
+    const navigation = app.keyDown(37);
+    assert.equal(app.activeElement, app.elements.serverIpInput);
+    assert.equal(navigation.defaultPrevented, true);
+
+    const done = app.keyDown(65376);
+    assert.equal(app.activeElement, app.elements.connectButton);
+    assert.equal(done.defaultPrevented, false);
+});

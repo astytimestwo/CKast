@@ -50,3 +50,12 @@ test('TV app saves the PC server address outside the packaged default', () => {
     assert.match(script, /localStorage\.setItem\(SERVER_IP_STORAGE_KEY,\s*ip\)/);
     assert.match(script, /serverForm\.addEventListener\('submit'/);
 });
+
+test('TV app enables user-triggered IME without opening it from JavaScript focus', () => {
+    const config = fs.readFileSync(path.join(__dirname, '../../tv-app/config.xml'), 'utf8');
+
+    assert.match(
+        config,
+        /metadata key="http:\/\/samsung\.com\/tv\/metadata\/use\.keypad\.without\.useraction" value="false"/
+    );
+});

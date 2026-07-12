@@ -11,4 +11,8 @@ Open this folder in VS Code when using the Samsung Tizen TV extension.
 
 The entered PC address is saved on the TV. If the PC IP changes later, edit it on the TV screen; you do not need to rebuild the app.
 
+Remote input: the address field starts focused. Press **Enter** to open the Samsung IME,
+complete editing with **Done/Go**, then select **Connect**. Press Left or Up from Connect to
+focus the address field again.
+
 The PC broadcaster is outside this folder at `../pc-broadcaster/` and must be started separately.

@@ -63,6 +63,10 @@ ipconfig
 
 You do not need to rebuild the TV app when this address changes. The TV receiver has a **PC address** field on its standby screen. Enter the PC IPv4 address there and press **Connect**; the TV saves it for the next launch.
 
+On the TV remote, the address field starts focused. Press **Enter** to open Samsung's on-screen
+keyboard, edit the address, finish with **Done/Go**, and select **Connect**. From the Connect
+button, press Left or Up to return to the address field.
+
 ### 4. Enable Developer Mode On The TV
 
 On the TV:
