@@ -56,7 +56,8 @@ switches the PC audio immediately without seeking, pausing, or restarting the TV
 File FFmpeg input is paced in real time. For synchronized play and every restart, CKast
 pauses MPV, resets the TV pipeline, and waits for receiver telemetry to prove that the
 requested buffer is ready before resuming. A 30-second readiness timeout is shown in the
-dashboard and does not force playback. MPV is launched audio-only.
+dashboard and does not force playback. MPV keeps its playback window visible so Windows and
+MPV playback controls remain available while the TV receives the separately encoded stream.
 
 Subtitle notes:
 - Embedded subtitle selection and size are supported through FFmpeg burn-in.

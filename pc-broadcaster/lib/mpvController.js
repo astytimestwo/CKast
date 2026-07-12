@@ -54,7 +54,7 @@ function resolveMpvPath() {
 function buildMpvArgs(pipePath) {
     return [
         '--idle=yes',
-        '--video=no',
+        '--force-window=yes',
         '--pause=yes',
         '--input-terminal=no',
         '--terminal=no',

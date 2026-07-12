@@ -66,13 +66,13 @@ function createController(processes) {
     return { controller, sockets };
 }
 
-test('MPV launches as an audio-only process', () => {
+test('MPV launches with the visible playback window used by the working release', () => {
     assert.equal(typeof buildMpvArgs, 'function');
 
     const args = buildMpvArgs('\\\\.\\pipe\\ckast-test');
 
-    assert.ok(args.includes('--video=no'));
-    assert.ok(!args.includes('--force-window=yes'));
+    assert.ok(args.includes('--force-window=yes'));
+    assert.ok(!args.includes('--video=no'));
 });
 
 test('MPV controller accepts process and socket boundaries', () => {
