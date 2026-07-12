@@ -690,6 +690,11 @@ app.post('/api/player/volume', asyncRoute(async (req, res) => {
     res.json({ success: true, player: status });
 }));
 
+app.post('/api/player/audio-track', asyncRoute(async (req, res) => {
+    const status = await player.setAudioTrack(req.body && req.body.audioTrackId);
+    res.json({ success: true, player: status });
+}));
+
 app.post('/api/player/audio-delay', asyncRoute(async (req, res) => {
     const delaySeconds = Number(req.body && req.body.delaySeconds);
     const status = await player.setAudioDelay(delaySeconds);

@@ -44,3 +44,14 @@ test('dashboard keeps buffered file playback controls available after the encode
 
     assert.match(dashboard, /currentTvVideo && currentTvVideo\.playbackAvailable/);
 });
+
+test('dashboard renders and switches MPV audio tracks without restarting playback', () => {
+    const dashboard = readDashboard();
+
+    assert.match(dashboard, /<select id="audioTrackSelect" disabled>/);
+    assert.match(dashboard, /function renderAudioTrackChoices\(player\)/);
+    assert.match(dashboard, /player\.audioTracks/);
+    assert.match(dashboard, /audioTrackSelect\.onchange = async \(\) =>/);
+    assert.match(dashboard, /postJson\('\/api\/player\/audio-track', \{\s*audioTrackId:/);
+    assert.match(dashboard, /audioTrackSelect\.value = String\(confirmedAudioTrackId\)/);
+});

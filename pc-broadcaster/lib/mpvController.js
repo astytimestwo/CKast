@@ -62,6 +62,33 @@ function buildMpvArgs(pipePath) {
     ];
 }
 
+function parseAudioTrackId(value) {
+    if (value === null || value === undefined || value === false || value === 'no' || value === 'auto') {
+        return null;
+    }
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function normalizeAudioTracks(trackList, selectedAudioTrackId) {
+    const selectedId = parseAudioTrackId(selectedAudioTrackId);
+    const hasSelectedId = selectedId !== null;
+
+    return (Array.isArray(trackList) ? trackList : [])
+        .filter((track) => track && track.type === 'audio' && Number.isInteger(Number(track.id)))
+        .map((track) => {
+            const id = Number(track.id);
+            return {
+                id,
+                language: track.lang || '',
+                title: track.title || '',
+                codec: track.codec || '',
+                channels: Number(track['demux-channel-count'] || track.channels) || 0,
+                selected: hasSelectedId ? id === selectedId : !!track.selected
+            };
+        });
+}
+
 class MpvController extends EventEmitter {
     constructor(options = {}) {
         super();
@@ -85,6 +112,8 @@ class MpvController extends EventEmitter {
             duration: 0,
             volume: 100,
             audioDelay: 0,
+            audioTracks: [],
+            selectedAudioTrackId: null,
             speed: 1,
             mpvPath: resolveMpvPath(),
             error: null
@@ -111,6 +140,8 @@ class MpvController extends EventEmitter {
 
         await this.command(['set_property', 'pause', true]);
         await this.command(['set_property', 'speed', 1]);
+        this.state.audioTracks = [];
+        this.state.selectedAudioTrackId = null;
         await this.command(['loadfile', normalizedPath, 'replace']);
 
         this.state.filePath = normalizedPath;
@@ -181,16 +212,37 @@ class MpvController extends EventEmitter {
         return this.getStatus();
     }
 
+    async setAudioTrack(audioTrackId) {
+        this.assertReady();
+        const nextTrackId = parseAudioTrackId(audioTrackId);
+        if (nextTrackId === null) {
+            throw new Error('Audio track ID must be a positive integer');
+        }
+        if (!this.state.audioTracks.some((track) => track.id === nextTrackId)) {
+            throw new Error(`Audio track ${nextTrackId} is not available`);
+        }
+
+        await this.command(['set_property', 'aid', nextTrackId]);
+        this.state.selectedAudioTrackId = nextTrackId;
+        this.state.audioTracks = this.state.audioTracks.map((track) => ({
+            ...track,
+            selected: track.id === nextTrackId
+        }));
+        return this.getStatus();
+    }
+
     async refreshCoreProperties() {
         if (!this.socket) return this.getStatus();
 
-        const [timePos, duration, paused, volume, audioDelay, speed] = await Promise.allSettled([
+        const [timePos, duration, paused, volume, audioDelay, speed, trackList, audioTrackId] = await Promise.allSettled([
             this.command(['get_property', 'time-pos']),
             this.command(['get_property', 'duration']),
             this.command(['get_property', 'pause']),
             this.command(['get_property', 'volume']),
             this.command(['get_property', 'audio-delay']),
-            this.command(['get_property', 'speed'])
+            this.command(['get_property', 'speed']),
+            this.command(['get_property', 'track-list']),
+            this.command(['get_property', 'aid'])
         ]);
 
         if (timePos.status === 'fulfilled' && Number.isFinite(timePos.value)) {
@@ -210,6 +262,24 @@ class MpvController extends EventEmitter {
         }
         if (speed.status === 'fulfilled' && Number.isFinite(speed.value)) {
             this.state.speed = speed.value;
+        }
+        if (audioTrackId.status === 'fulfilled') {
+            this.state.selectedAudioTrackId = parseAudioTrackId(audioTrackId.value);
+        }
+        if (trackList.status === 'fulfilled') {
+            this.state.audioTracks = normalizeAudioTracks(
+                trackList.value,
+                this.state.selectedAudioTrackId
+            );
+            if (this.state.selectedAudioTrackId === null) {
+                const selectedTrack = this.state.audioTracks.find((track) => track.selected);
+                this.state.selectedAudioTrackId = selectedTrack ? selectedTrack.id : null;
+            }
+        } else if (audioTrackId.status === 'fulfilled') {
+            this.state.audioTracks = this.state.audioTracks.map((track) => ({
+                ...track,
+                selected: track.id === this.state.selectedAudioTrackId
+            }));
         }
 
         return this.getStatus();
@@ -239,6 +309,8 @@ class MpvController extends EventEmitter {
         this.state.timePos = 0;
         this.state.duration = 0;
         this.state.audioDelay = 0;
+        this.state.audioTracks = [];
+        this.state.selectedAudioTrackId = null;
         this.state.speed = 1;
         this.state.filePath = null;
 
@@ -416,6 +488,19 @@ class MpvController extends EventEmitter {
             this.state.audioDelay = message.data;
         } else if (message.name === 'speed' && Number.isFinite(message.data)) {
             this.state.speed = message.data;
+        } else if (message.name === 'track-list') {
+            this.state.audioTracks = normalizeAudioTracks(
+                message.data,
+                this.state.selectedAudioTrackId
+            );
+            const selectedTrack = this.state.audioTracks.find((track) => track.selected);
+            this.state.selectedAudioTrackId = selectedTrack ? selectedTrack.id : null;
+        } else if (message.name === 'aid') {
+            this.state.selectedAudioTrackId = parseAudioTrackId(message.data);
+            this.state.audioTracks = this.state.audioTracks.map((track) => ({
+                ...track,
+                selected: track.id === this.state.selectedAudioTrackId
+            }));
         }
     }
 
@@ -426,6 +511,8 @@ class MpvController extends EventEmitter {
         await this.command(['observe_property', 4, 'volume']);
         await this.command(['observe_property', 5, 'audio-delay']);
         await this.command(['observe_property', 6, 'speed']);
+        await this.command(['observe_property', 7, 'track-list']);
+        await this.command(['observe_property', 8, 'aid']);
     }
 
     command(command) {
@@ -473,5 +560,6 @@ class MpvController extends EventEmitter {
 module.exports = {
     buildMpvArgs,
     MpvController,
+    normalizeAudioTracks,
     resolveMpvPath
 };

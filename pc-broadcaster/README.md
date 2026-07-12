@@ -50,6 +50,9 @@ This mode keeps audio on the PC and sends video-only to the TV.
 
 The PC plays audio through MPV. The TV receives video-only FFmpeg fMP4 chunks and sends a lightweight sync-state ping once per second so the PC can keep audio aligned.
 
+For files with multiple audio tracks, use **Audio track** in the Local Player panel. MPV
+switches the PC audio immediately without seeking, pausing, or restarting the TV video stream.
+
 File FFmpeg input is paced in real time. For synchronized play and every restart, CKast
 pauses MPV, resets the TV pipeline, and waits for receiver telemetry to prove that the
 requested buffer is ready before resuming. A 30-second readiness timeout is shown in the

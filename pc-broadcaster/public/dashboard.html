@@ -297,6 +297,12 @@
                         Volume
                         <input id="volumeRange" type="range" min="0" max="100" step="1" value="100" disabled>
                     </label>
+                    <label>
+                        Audio track
+                        <select id="audioTrackSelect" disabled>
+                            <option value="">No audio tracks</option>
+                        </select>
+                    </label>
                     <div class="settings-grid dev-option" hidden>
                         <label>
                             Audio sync trim seconds
@@ -414,6 +420,7 @@
         const fwdBtn = document.getElementById('fwdBtn');
         const seekRange = document.getElementById('seekRange');
         const volumeRange = document.getElementById('volumeRange');
+        const audioTrackSelect = document.getElementById('audioTrackSelect');
         const mirrorTrimInput = document.getElementById('mirrorTrimInput');
         const syncMirrorAudioBtn = document.getElementById('syncMirrorAudioBtn');
         const audioBackBtn = document.getElementById('audioBackBtn');
@@ -453,6 +460,7 @@
         let isSeeking = false;
         let streamControlsHydrated = false;
         let statusRequestInFlight = false;
+        let confirmedAudioTrackId = null;
         const latchedStatusErrors = new WeakSet();
 
         function applyDevOptionVisibility() {
@@ -540,6 +548,7 @@
             seekRange.max = String(Math.max(duration, 0));
             if (!isSeeking) seekRange.value = String(Math.min(timePos, duration || timePos));
             volumeRange.value = String(Math.round(Number(currentPlayer && currentPlayer.volume) || 100));
+            renderAudioTrackChoices(currentPlayer);
             audioDelayValue.textContent = ((Number(currentPlayer && currentPlayer.audioDelay) || 0).toFixed(2)) + 's';
             timeLabel.textContent = formatTime(timePos) + ' / ' + formatTime(duration);
 
@@ -550,6 +559,58 @@
             } else {
                 setStatus(playerStatus, 'No media loaded', '');
             }
+        }
+
+        function audioTrackLanguageName(language) {
+            if (!language) return '';
+            try {
+                if (Intl && Intl.DisplayNames) {
+                    return new Intl.DisplayNames(['en'], { type: 'language' }).of(language) || language;
+                }
+            } catch (e) { }
+            return language;
+        }
+
+        function audioTrackLabel(track) {
+            const parts = [];
+            const language = audioTrackLanguageName(track.language);
+            if (language) parts.push(language);
+            if (track.title && track.title.toLowerCase() !== String(language).toLowerCase()) {
+                parts.push(track.title);
+            }
+            if (track.codec) parts.push(String(track.codec).toUpperCase());
+            if (track.channels) parts.push(track.channels + ' ch');
+            return parts.length ? parts.join(' · ') : 'Track ' + track.id;
+        }
+
+        function renderAudioTrackChoices(player) {
+            const tracks = player && Array.isArray(player.audioTracks) ? player.audioTracks : [];
+            audioTrackSelect.innerHTML = '';
+
+            if (!tracks.length) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No audio tracks';
+                audioTrackSelect.appendChild(option);
+                audioTrackSelect.disabled = true;
+                confirmedAudioTrackId = null;
+                return;
+            }
+
+            for (const track of tracks) {
+                const option = document.createElement('option');
+                option.value = String(track.id);
+                option.textContent = audioTrackLabel(track);
+                audioTrackSelect.appendChild(option);
+            }
+
+            const selected = Number(player.selectedAudioTrackId);
+            const selectedTrack = tracks.find((track) => track.id === selected)
+                || tracks.find((track) => track.selected)
+                || tracks[0];
+            confirmedAudioTrackId = selectedTrack.id;
+            audioTrackSelect.value = String(confirmedAudioTrackId);
+            audioTrackSelect.disabled = !player.loaded || tracks.length < 2;
         }
 
         function renderMirrorSync(mirrorSync, player) {
@@ -897,6 +958,27 @@
                 const data = await postJson('/api/player/volume', { volume: Number(volumeRange.value) });
                 renderPlayer(data.player);
             } catch (e) {
+                setActionError(playerStatus, e);
+            }
+        };
+
+        audioTrackSelect.onchange = async () => {
+            const previousAudioTrackId = confirmedAudioTrackId;
+            try {
+                clearStatusLatch(playerStatus);
+                audioTrackSelect.disabled = true;
+                const data = await postJson('/api/player/audio-track', {
+                    audioTrackId: Number(audioTrackSelect.value)
+                });
+                renderPlayer(data.player);
+            } catch (e) {
+                confirmedAudioTrackId = previousAudioTrackId;
+                if (confirmedAudioTrackId !== null) {
+                    audioTrackSelect.value = String(confirmedAudioTrackId);
+                }
+                audioTrackSelect.disabled = !(currentPlayer && currentPlayer.loaded)
+                    || !currentPlayer.audioTracks
+                    || currentPlayer.audioTracks.length < 2;
                 setActionError(playerStatus, e);
             }
         };

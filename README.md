@@ -151,12 +151,15 @@ For synced local-player mode:
 2. Open the TV app.
 3. In the dashboard, enter a local media path.
 4. Click **Open**.
-5. Choose quality, fit, and subtitle options.
+5. Choose the PC audio track plus quality, fit, and subtitle options.
 6. Click **Synced Play**.
 
 File video is paced in real time. MPV stays paused until the TV reports that its requested
 buffer target is ready; if readiness is not reached within 30 seconds, the dashboard reports
 the timeout instead of starting audio out of sync.
+
+When a file contains multiple audio tracks, the dashboard can switch MPV between them while
+the video continues at the same position and TV synchronization remains active.
 
 ## Common Fixes
 

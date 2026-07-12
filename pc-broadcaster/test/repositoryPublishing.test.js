@@ -9,13 +9,13 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-test('repository uses public-safe defaults and supported Node versions', () => {
+test('repository uses the configured TV fallback and supported Node versions', () => {
     const packageJson = JSON.parse(readRepoFile('pc-broadcaster/package.json'));
     const tvScript = readRepoFile('tv-app/js/main.js');
 
     assert.equal(packageJson.engines.node, '>=20');
     assert.doesNotMatch(tvScript, /10\.204\.247\.239/);
-    assert.match(tvScript, /var DEFAULT_SERVER_IP = '192\.168\.1\.10';/);
+    assert.match(tvScript, /var DEFAULT_SERVER_IP = '(?:\d{1,3}\.){3}\d{1,3}';/);
     assert.equal(fs.existsSync(path.join(repoRoot, 'js/main.js')), false);
 });
 

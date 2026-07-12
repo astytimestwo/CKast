@@ -11,3 +11,10 @@ test('desktop reconnect rebases capture timing to the replacement TV pipeline', 
         /tvSession\.mode === 'desktop'[\s\S]*?S\.captureTimelineStartedAtMs = Date\.now\(\)/
     );
 });
+
+test('audio-track route changes only the MPV audio track', () => {
+    assert.match(
+        serverSource,
+        /app\.post\('\/api\/player\/audio-track',[\s\S]*?player\.setAudioTrack\(req\.body && req\.body\.audioTrackId\)[\s\S]*?res\.json\(\{ success: true, player: status \}\)/
+    );
+});

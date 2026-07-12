@@ -24,9 +24,9 @@
 - Modify: `pc-broadcaster/lib/mpvController.js`
 - Modify: `pc-broadcaster/test/mpvController.test.js`
 
-- [ ] Add failing tests for normalized `track-list`, selected `aid`, validated selection, state clearing, and a single `set_property aid` command.
-- [ ] Implement `normalizeAudioTracks`, `setAudioTrack`, `track-list`/`aid` refresh and observation, and state reset.
-- [ ] Run `node --test test/mpvController.test.js`.
+- [x] Add failing tests for normalized `track-list`, selected `aid`, validated selection, state clearing, and a single `set_property aid` command.
+- [x] Implement `normalizeAudioTracks`, `setAudioTrack`, `track-list`/`aid` refresh and observation, and state reset.
+- [x] Run `node --test test/mpvController.test.js`.
 
 ### Task 2: API and dashboard selector
 
@@ -36,10 +36,10 @@
 - Modify: `pc-broadcaster/test/serverLifecycle.test.js`
 - Modify: `pc-broadcaster/test/dashboard.test.js`
 
-- [ ] Add failing contract tests for `POST /api/player/audio-track`, the selector, labels, disabled state, request payload, and error rollback.
-- [ ] Add the server route that calls only `player.setAudioTrack(req.body.audioTrackId)`.
-- [ ] Add and render the selector from player status; on change, update through the route and restore the confirmed state on failure.
-- [ ] Run focused controller, server-contract, and dashboard tests.
+- [x] Add failing contract tests for `POST /api/player/audio-track`, the selector, labels, disabled state, request payload, and error rollback.
+- [x] Add the server route that calls only `player.setAudioTrack(req.body.audioTrackId)`.
+- [x] Add and render the selector from player status; on change, update through the route and restore the confirmed state on failure.
+- [x] Run focused controller, server-contract, and dashboard tests.
 
 ### Task 3: Documentation, verification, and local commit
 
@@ -48,7 +48,7 @@
 - Modify: `pc-broadcaster/README.md`
 - Modify: this plan's checkboxes
 
-- [ ] Document immediate PC audio-track selection.
-- [ ] Run `npm test`, `npm run check`, syntax-check all JavaScript, and `git diff --check`.
-- [ ] Confirm `tv-app/js/main.js` remains uncommitted and unchanged by this implementation.
-- [ ] Commit only audio-track feature, tests, documentation, spec, and plan; do not push.
+- [x] Document immediate PC audio-track selection.
+- [x] Run `npm test`, `npm run check`, syntax-check all JavaScript, and `git diff --check`.
+- [x] Confirm `tv-app/js/main.js` remains uncommitted and unchanged by this implementation.
+- [x] Commit only audio-track feature, tests, documentation, spec, and plan; do not push.

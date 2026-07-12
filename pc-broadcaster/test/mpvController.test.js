@@ -4,7 +4,8 @@ const test = require('node:test');
 
 const {
     MpvController,
-    buildMpvArgs
+    buildMpvArgs,
+    normalizeAudioTracks
 } = require('../lib/mpvController');
 
 class FakeProcess extends EventEmitter {
@@ -181,4 +182,78 @@ test('IPC startup failure cleans up the spawned MPV process', async () => {
         if (previousMpvPath === undefined) delete process.env.MPV_PATH;
         else process.env.MPV_PATH = previousMpvPath;
     }
+});
+
+test('normalizes MPV audio tracks and selected aid', () => {
+    const tracks = normalizeAudioTracks([
+        { id: 1, type: 'video', codec: 'h264', selected: true },
+        { id: 2, type: 'audio', lang: 'fra', title: 'French', codec: 'aac', 'demux-channel-count': 6 },
+        { id: 4, type: 'audio', lang: 'eng', title: 'English', codec: 'ac3', 'demux-channel-count': 2 }
+    ], 4);
+
+    assert.deepEqual(tracks, [
+        { id: 2, language: 'fra', title: 'French', codec: 'aac', channels: 6, selected: false },
+        { id: 4, language: 'eng', title: 'English', codec: 'ac3', channels: 2, selected: true }
+    ]);
+});
+
+test('uses MPV selected flag when aid is not available yet', () => {
+    const tracks = normalizeAudioTracks([
+        { id: 2, type: 'audio', lang: 'fra', selected: true },
+        { id: 4, type: 'audio', lang: 'eng', selected: false }
+    ], null);
+
+    assert.equal(tracks[0].selected, true);
+    assert.equal(tracks[1].selected, false);
+});
+
+test('selecting an audio track changes only MPV aid', async () => {
+    const controller = new MpvController();
+    const commands = [];
+    controller.process = {};
+    controller.socket = {};
+    controller.state.loaded = true;
+    controller.state.paused = false;
+    controller.state.timePos = 2120;
+    controller.state.speed = 1.01;
+    controller.state.audioDelay = 2.5;
+    controller.state.audioTracks = [
+        { id: 2, language: 'fra', selected: true },
+        { id: 4, language: 'eng', selected: false }
+    ];
+    controller.state.selectedAudioTrackId = 2;
+    controller.command = async (command) => { commands.push(command); };
+
+    const status = await controller.setAudioTrack(4);
+
+    assert.deepEqual(commands, [['set_property', 'aid', 4]]);
+    assert.equal(status.selectedAudioTrackId, 4);
+    assert.equal(status.audioTracks[0].selected, false);
+    assert.equal(status.audioTracks[1].selected, true);
+    assert.equal(status.paused, false);
+    assert.equal(status.timePos, 2120);
+    assert.equal(status.speed, 1.01);
+    assert.equal(status.audioDelay, 2.5);
+});
+
+test('rejects an audio track ID not present in MPV track-list', async () => {
+    const controller = new MpvController();
+    controller.process = {};
+    controller.socket = {};
+    controller.state.loaded = true;
+    controller.state.audioTracks = [{ id: 2, language: 'fra', selected: true }];
+    controller.command = async () => { throw new Error('must not send'); };
+
+    await assert.rejects(controller.setAudioTrack(99), /Audio track 99 is not available/);
+});
+
+test('stopping MPV clears audio track state', async () => {
+    const controller = new MpvController();
+    controller.state.audioTracks = [{ id: 2, selected: true }];
+    controller.state.selectedAudioTrackId = 2;
+
+    await controller.stop();
+
+    assert.deepEqual(controller.getStatus().audioTracks, []);
+    assert.equal(controller.getStatus().selectedAudioTrackId, null);
 });
