@@ -334,6 +334,7 @@ function resetTvForDesktopCapture() {
 }
 
 function resetTvForFilePlayback(reason) {
+    sendFilePlaybackTvControls(reason || 'file_playback');
     sendTvControl({
         type: 'reset',
         mode: 'file',
@@ -341,7 +342,6 @@ function resetTvForFilePlayback(reason) {
         generation: tvSession.generation,
         reason: reason || 'file_playback'
     });
-    sendFilePlaybackTvControls(reason || 'file_playback');
     sendTvControl({ type: 'fit', mode: streamOptions.fitMode });
 }
 
