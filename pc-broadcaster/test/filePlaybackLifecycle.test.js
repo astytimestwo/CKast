@@ -165,3 +165,22 @@ test('file readiness timeout is reported without starting playback', async () =>
     assert.equal(status.readinessTimedOut, true);
     assert.ok(!calls.includes('player.play'));
 });
+
+test('initial alignment pending flag transitions correctly', async () => {
+    const { coordinator, tvSession } = createCoordinator();
+    
+    assert.equal(coordinator.getStatus().initialAlignmentPending, false);
+
+    await coordinator.restart({
+        filePath: 'movie.mkv',
+        startTime: 0,
+        resume: true,
+        targetBufferSeconds: 5
+    });
+
+    assert.equal(coordinator.getStatus().initialAlignmentPending, true);
+
+    await coordinator.stop();
+
+    assert.equal(coordinator.getStatus().initialAlignmentPending, false);
+});

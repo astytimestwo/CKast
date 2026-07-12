@@ -447,6 +447,13 @@ async function handleTvSyncState(tvState) {
     if (!streamCanSync || !playerStatus.loaded || playerStatus.paused) return;
     if (!Number.isFinite(tvState.currentTime)) return;
 
+    if (filePlayback.initialAlignmentPending) {
+        filePlayback.initialAlignmentPending = false;
+        const targetTime = tvState.currentTime + streamStatus.streamStartTime;
+        player.seek(targetTime).catch((err) => reportError('initial_alignment_seek_failed', err));
+        return;
+    }
+
     const fileSync = calculateFileSyncState({
         streamStartTimeSeconds: streamStatus.streamStartTime,
         tvCurrentTimeSeconds: tvState.currentTime,
@@ -482,7 +489,6 @@ async function handleTvSyncState(tvState) {
             await player.setSpeed(1);
             lastAudioFollowSpeed = 1;
             lastPlaybackRate = 1;
-            disarmAutoAudioFollow();
         } catch (err) {
             reportError('file_audio_follow_seek_failed', err);
         } finally {

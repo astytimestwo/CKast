@@ -34,3 +34,10 @@ test('file playback disables TV autoplay before resetting the paused pipeline', 
         'fixed-latency file controls must precede reset(autoPlay: false)'
     );
 });
+
+test('server performs initial alignment seek and resets the pending flag', () => {
+    assert.match(
+        serverSource,
+        /if\s*\(filePlayback\.initialAlignmentPending\)[\s\S]*?filePlayback\.initialAlignmentPending\s*=\s*false;[\s\S]*?player\.seek/
+    );
+});

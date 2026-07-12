@@ -13,6 +13,7 @@ class FilePlaybackCoordinator {
         this.onResume = options.onResume || (() => {});
         this.readinessTimeoutMs = Number(options.readinessTimeoutMs) || 30000;
         this.now = options.now || Date.now;
+        this.initialAlignmentPending = false;
     }
 
     async restart(options = {}) {
@@ -43,8 +44,10 @@ class FilePlaybackCoordinator {
                 targetBufferSeconds,
                 reason: options.reason || 'file_restart'
             });
+            this.initialAlignmentPending = true;
         } else {
             this.tvSession.clearReadiness();
+            this.initialAlignmentPending = false;
         }
 
         return this.getStatus();
@@ -64,6 +67,7 @@ class FilePlaybackCoordinator {
 
     async stop(reason = 'file_stop') {
         this.tvSession.clearReadiness();
+        this.initialAlignmentPending = false;
         if (this.tvSession.mode === 'file') {
             this.sendControl({ type: 'stop', reason });
         }
@@ -83,7 +87,8 @@ class FilePlaybackCoordinator {
             readinessTimedOut: !!(
                 pendingReadiness &&
                 this.now() - pendingReadiness.requestedAt > this.readinessTimeoutMs
-            )
+            ),
+            initialAlignmentPending: !!this.initialAlignmentPending
         };
     }
 }
