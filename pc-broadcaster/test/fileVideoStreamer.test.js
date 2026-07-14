@@ -147,6 +147,83 @@ test('subtitle setup failure leaves the file streamer in an error state', () => 
     }
 });
 
+test('nonzero FFmpeg exit includes bounded recent stderr diagnostics', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-diagnostic-test.mp4');
+    fs.writeFileSync(tempFile, 'not real media');
+    let ffmpegProcess;
+    const { FileVideoStreamer, restore } = freshStreamerWithSpawn(() => {
+        ffmpegProcess = new FakeProcess(3500);
+        return ffmpegProcess;
+    });
+
+    try {
+        const streamer = new FileVideoStreamer();
+        streamer.start(tempFile, { sendSegment() {} });
+        ffmpegProcess.stderr.emit('data', Buffer.from('A'.repeat(5000)));
+        ffmpegProcess.stderr.emit('data', Buffer.from("\nError initializing filter 'subtitles': unsupported codec\n"));
+        ffmpegProcess.emit('close', 1);
+
+        const status = streamer.getStatus();
+        assert.equal(status.mode, 'error');
+        assert.match(status.error, /FFmpeg exited with code 1:/);
+        assert.match(status.error, /Error initializing filter 'subtitles': unsupported codec/);
+        assert.ok(status.error.length <= 4200, 'diagnostic error should retain only a bounded stderr tail');
+    } finally {
+        restore();
+        fs.rmSync(tempFile, { force: true });
+    }
+});
+
+test('stale FFmpeg stderr cannot contaminate a replacement stream error', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-stale-diagnostic-test.mp4');
+    fs.writeFileSync(tempFile, 'not real media');
+    const processes = [];
+    const { FileVideoStreamer, restore } = freshStreamerWithSpawn(() => {
+        const process = new FakeProcess(3550 + processes.length);
+        processes.push(process);
+        return process;
+    });
+
+    try {
+        const streamer = new FileVideoStreamer();
+        streamer.start(tempFile, { sendSegment() {} });
+        streamer.restartAt(3, {});
+        processes[0].stderr.emit('data', Buffer.from('stale subtitle failure'));
+        processes[1].emit('close', 2);
+
+        assert.equal(streamer.getStatus().error, 'FFmpeg exited with code 2');
+    } finally {
+        restore();
+        fs.rmSync(tempFile, { force: true });
+    }
+});
+
+test('starting a new file stream clears prior FFmpeg diagnostics', () => {
+    const tempFile = path.join(os.tmpdir(), 'ckast-streamer-diagnostic-reset-test.mp4');
+    fs.writeFileSync(tempFile, 'not real media');
+    const processes = [];
+    const { FileVideoStreamer, restore } = freshStreamerWithSpawn(() => {
+        const process = new FakeProcess(3600 + processes.length);
+        processes.push(process);
+        return process;
+    });
+
+    try {
+        const streamer = new FileVideoStreamer();
+        streamer.start(tempFile, { sendSegment() {} });
+        processes[0].stderr.emit('data', Buffer.from('old subtitle failure'));
+        processes[0].emit('close', 1);
+        assert.match(streamer.getStatus().error, /old subtitle failure/);
+
+        streamer.start(tempFile, { sendSegment() {} });
+        processes[1].emit('close', 2);
+        assert.equal(streamer.getStatus().error, 'FFmpeg exited with code 2');
+    } finally {
+        restore();
+        fs.rmSync(tempFile, { force: true });
+    }
+});
+
 test('ended file encoder remains controllable while TV playback may be buffered', () => {
     const tempFile = path.join(os.tmpdir(), 'ckast-streamer-ended-buffer.mp4');
     fs.writeFileSync(tempFile, 'not real media');

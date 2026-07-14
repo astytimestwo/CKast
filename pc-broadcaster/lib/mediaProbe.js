@@ -2,6 +2,44 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const TEXT_SUBTITLE_CODECS = new Set([
+    'ass',
+    'mov_text',
+    'sami',
+    'ssa',
+    'subrip',
+    'text',
+    'webvtt'
+]);
+const IMAGE_SUBTITLE_CODECS = new Set([
+    'dvb_subtitle',
+    'dvd_subtitle',
+    'hdmv_pgs_subtitle',
+    'xsub'
+]);
+
+function classifySubtitleBurnInSupport(codec) {
+    const normalizedCodec = String(codec || '').toLowerCase();
+    if (TEXT_SUBTITLE_CODECS.has(normalizedCodec)) return 'supported';
+    if (IMAGE_SUBTITLE_CODECS.has(normalizedCodec)) return 'unsupported';
+    return 'unknown';
+}
+
+function assertSubtitleBurnInSupported(media, options) {
+    if (!options || options.subtitlesEnabled === false || options.externalSubtitlePath) return;
+
+    const subtitleIndex = Number(options.subtitleStreamIndex);
+    if (!Number.isInteger(subtitleIndex) || subtitleIndex < 0) return;
+
+    const subtitles = media && Array.isArray(media.subtitles) ? media.subtitles : [];
+    const subtitle = subtitles.find((track) => track.subtitleIndex === subtitleIndex);
+    if (!subtitle || subtitle.burnInSupport !== 'unsupported') return;
+
+    throw new Error(
+        `Embedded subtitle track ${subtitle.index} (${subtitle.codec}) cannot be burned into the TV video.`
+    );
+}
+
 function resolveFfprobePath() {
     if (process.env.FFPROBE_PATH) {
         return process.env.FFPROBE_PATH;
@@ -92,6 +130,7 @@ function summarizeProbe(raw, filePath) {
                 index: stream.index,
                 subtitleIndex,
                 codec: stream.codec_name || '',
+                burnInSupport: classifySubtitleBurnInSupport(stream.codec_name),
                 language: stream.tags && stream.tags.language ? stream.tags.language : '',
                 title: stream.tags && stream.tags.title ? stream.tags.title : ''
             }))
@@ -99,6 +138,8 @@ function summarizeProbe(raw, filePath) {
 }
 
 module.exports = {
+    assertSubtitleBurnInSupported,
+    classifySubtitleBurnInSupport,
     probeMedia,
     resolveFfprobePath,
     summarizeProbe

@@ -35,6 +35,20 @@ test('file playback disables TV autoplay before resetting the paused pipeline', 
     );
 });
 
+test('server validates subtitle options before committing or restarting playback', () => {
+    assert.match(serverSource, /let currentMedia = null;/);
+
+    const functionStart = serverSource.indexOf('function applyStreamOptions');
+    const functionEnd = serverSource.indexOf('\n}\n\nfunction applyFixedLatencyOptions', functionStart);
+    const applySource = serverSource.slice(functionStart, functionEnd);
+    const normalize = applySource.indexOf('normalizeStreamOptions');
+    const validate = applySource.indexOf('assertSubtitleBurnInSupported');
+    const commit = applySource.indexOf('streamOptions = next');
+
+    assert.ok(functionStart >= 0 && functionEnd > functionStart);
+    assert.ok(normalize >= 0 && validate > normalize && commit > validate);
+});
+
 test('server performs initial alignment seek and resets the pending flag', () => {
     assert.match(
         serverSource,

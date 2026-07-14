@@ -60,7 +60,9 @@ dashboard and does not force playback. MPV keeps its playback window visible so 
 MPV playback controls remain available while the TV receives the separately encoded stream.
 
 Subtitle notes:
-- Embedded subtitle selection and size are supported through FFmpeg burn-in.
+- CKast uses FFmpeg burn-in: subtitle pixels become part of the TV video. The TV does not receive a separate subtitle track, so changing or disabling subtitles requires a video-stream restart.
+- Subtitle size `1` preserves the track's original/default styling. Other values apply a moderate explicit font-size override during burn-in.
+- Embedded text subtitle tracks and external subtitle files are supported. Known image-based tracks such as PGS, DVD, and DVB subtitles are shown but disabled because the text burn-in filter cannot render them.
 - External `.srt` files support delay by creating a temporary shifted subtitle file in `pc-broadcaster/.runtime/`.
 - Changing subtitle or quality settings restarts the TV video stream at the current playback position.
 

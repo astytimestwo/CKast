@@ -45,6 +45,16 @@ test('dashboard keeps buffered file playback controls available after the encode
     assert.match(dashboard, /currentTvVideo && currentTvVideo\.playbackAvailable/);
 });
 
+test('dashboard disables known unsupported embedded subtitle tracks', () => {
+    const dashboard = readDashboard();
+
+    assert.match(dashboard, /subtitle\.burnInSupport === 'unsupported'/);
+    assert.match(dashboard, /opt\.disabled = unsupported/);
+    assert.match(dashboard, /unsupported for burn-in/);
+    assert.match(dashboard, /subtitle\.subtitleIndex !== undefined \? subtitle\.subtitleIndex : subtitle\.index/);
+    assert.match(dashboard, /Subtitle size \(1 = original\)/);
+});
+
 test('dashboard renders and switches MPV audio tracks without restarting playback', () => {
     const dashboard = readDashboard();
 

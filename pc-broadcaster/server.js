@@ -3,7 +3,11 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const path = require('path');
 const { MpvController, resolveMpvPath } = require('./lib/mpvController');
-const { probeMedia, resolveFfprobePath } = require('./lib/mediaProbe');
+const {
+    assertSubtitleBurnInSupported,
+    probeMedia,
+    resolveFfprobePath
+} = require('./lib/mediaProbe');
 const { FileVideoStreamer, resolveFfmpegPath } = require('./lib/fileVideoStreamer');
 const { DesktopCapture } = require('./lib/desktopCapture');
 const { TvSession } = require('./lib/tvSession');
@@ -43,6 +47,7 @@ function freshState() {
 }
 
 let S = freshState();
+let currentMedia = null;
 let syncResyncing = false;
 let lastRateCommandAt = 0;
 let lastPlaybackRate = 1;
@@ -222,7 +227,9 @@ function normalizeStreamOptions(input) {
 }
 
 function applyStreamOptions(input) {
-    streamOptions = normalizeStreamOptions(input);
+    const next = normalizeStreamOptions(input);
+    assertSubtitleBurnInSupported(currentMedia, next);
+    streamOptions = next;
     sendTvControl({ type: 'fit', mode: streamOptions.fitMode });
     return streamOptions;
 }
@@ -656,6 +663,7 @@ app.post('/api/player/open', asyncRoute(async (req, res) => {
         S.tvSyncState = null;
     }
     const status = await player.open(media.filePath);
+    currentMedia = media;
 
     res.json({
         success: true,

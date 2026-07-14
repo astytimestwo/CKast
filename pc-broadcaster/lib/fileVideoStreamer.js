@@ -4,6 +4,9 @@ const path = require('path');
 const { spawn } = require('child_process');
 const Mp4Frag = require('mp4frag');
 
+const DEFAULT_SUBTITLE_FONT_SIZE = 16;
+const MAX_FFMPEG_STDERR_LENGTH = 4096;
+
 function resolveFfmpegPath() {
     if (process.env.FFMPEG_PATH) {
         return process.env.FFMPEG_PATH;
@@ -76,8 +79,8 @@ function buildSubtitleFilter(options, startTime = 0) {
     const delay = Number(options.subtitleDelay);
     const forceStyleParts = [];
 
-    if (Number.isFinite(scale) && scale > 0) {
-        forceStyleParts.push('Fontsize=' + Math.round(42 * scale));
+    if (Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > 0.001) {
+        forceStyleParts.push('FontSize=' + Math.round(DEFAULT_SUBTITLE_FONT_SIZE * scale));
     }
 
     var subtitleFilter = null;
@@ -119,6 +122,7 @@ class FileVideoStreamer extends EventEmitter {
         this.lastSegmentAt = null;
         this.sendSegment = null;
         this.subtitleTempPath = null;
+        this.ffmpegStderr = '';
         this.options = {
             bitrateKbps: 16000,
             subtitleStreamIndex: -1,
@@ -166,6 +170,7 @@ class FileVideoStreamer extends EventEmitter {
         this.streamStartTime = startTime;
         this.mode = 'starting';
         this.error = null;
+        this.ffmpegStderr = '';
         this.lastSegmentAt = null;
         this.sendSegment = options && options.sendSegment;
         this.emit('start', {
@@ -254,8 +259,11 @@ class FileVideoStreamer extends EventEmitter {
         ffmpegProcess.stdout.pipe(this.mp4frag);
 
         ffmpegProcess.stderr.on('data', (chunk) => {
-            const message = chunk.toString().trim();
+            if (this.ffmpegProcess !== ffmpegProcess) return;
+            const rawMessage = chunk.toString();
+            const message = rawMessage.trim();
             if (message) this.emit('log', message);
+            this.ffmpegStderr = (this.ffmpegStderr + rawMessage).slice(-MAX_FFMPEG_STDERR_LENGTH);
         });
 
         ffmpegProcess.once('error', (err) => {
@@ -268,7 +276,8 @@ class FileVideoStreamer extends EventEmitter {
         ffmpegProcess.once('close', (code) => {
             if (this.ffmpegProcess !== ffmpegProcess) return;
             if (this.mode !== 'idle' && code !== 0 && code !== null) {
-                this.error = 'FFmpeg exited with code ' + code;
+                const diagnostic = this.ffmpegStderr.trim();
+                this.error = 'FFmpeg exited with code ' + code + (diagnostic ? ': ' + diagnostic : '');
                 this.mode = 'error';
             } else if (this.mode !== 'idle') {
                 this.mode = 'ended';

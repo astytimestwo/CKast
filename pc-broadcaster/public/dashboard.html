@@ -360,7 +360,7 @@
                             <input id="subtitleDelayInput" type="text" value="0">
                         </label>
                         <label>
-                            Subtitle size
+                            Subtitle size (1 = original)
                             <input id="subtitleScaleInput" type="text" value="1">
                         </label>
                     </div>
@@ -756,8 +756,12 @@
 
             for (const subtitle of media.subtitles) {
                 const opt = document.createElement('option');
+                const unsupported = subtitle.burnInSupport === 'unsupported';
                 opt.value = String(subtitle.subtitleIndex !== undefined ? subtitle.subtitleIndex : subtitle.index);
-                opt.textContent = '#' + subtitle.index + ' ' + (subtitle.language || 'und') + ' ' + (subtitle.title || subtitle.codec || '');
+                opt.textContent = '#' + subtitle.index + ' ' + (subtitle.language || 'und') + ' ' +
+                    (subtitle.title || subtitle.codec || '') +
+                    (unsupported ? ' — unsupported for burn-in' : '');
+                opt.disabled = unsupported;
                 subtitleTrackSelect.appendChild(opt);
             }
         }
