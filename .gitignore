@@ -34,3 +34,15 @@ mpv-master/
 mpv-v*/
 stable/
 plan.txt
+
+# Local-only development and repository support files
+/.claude/
+/.github/
+/.gitattributes
+/CONTRIBUTING.md
+/SECURITY.md
+/dev_operating_guide.md
+/docs/
+/pc-broadcaster/README.md
+/pc-broadcaster/test/
+/tv-app/README.md
